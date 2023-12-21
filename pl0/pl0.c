@@ -50,7 +50,7 @@ void getch(void)
 } // getch
 
 //////////////////////////////////////////////////////////////////////
-// gets a symbol from input stream.
+// gets a symbol from input stream. 调用完后，sym 里面存放的是当前读取到的符号类型，然后据此从对应全局变量找到对应的符号（数字，标识符等），ch指向读完后的下一个字符
 void getsym(void)
 {
 	int i, k;
@@ -170,7 +170,7 @@ void gen(int x, int y, int z)
 } // gen
 
 //////////////////////////////////////////////////////////////////////
-// tests if error occurs and skips all symbols that do not belongs to s1 or s2.
+// tests if error occurs and skips all symbols that do not belongs to s1 or s2. 遇到错误输入时，跳过后面部分输入，直到下一句正常代码开始
 void test(symset s1, symset s2, int n)
 {
 	symset s;
@@ -219,7 +219,7 @@ void enter(int kind)
 } // enter
 
 //////////////////////////////////////////////////////////////////////
-// locates identifier in symbol table.
+// locates identifier in symbol table. 返回符号在符号表中的位置，然后通过table[i]找到对应的符号
 int position(char* id)
 {
 	int i;
@@ -230,6 +230,7 @@ int position(char* id)
 } // position
 
 //////////////////////////////////////////////////////////////////////
+// 已经读完const和标识符，接下来读取等号和数字，然后将常量加入符号表，调用完成后，sym指向下一个标识符
 void constdeclaration()
 {
 	if (sym == SYM_IDENTIFIER)
@@ -259,6 +260,7 @@ void constdeclaration()
 } // constdeclaration
 
 //////////////////////////////////////////////////////////////////////
+// 已经读完var和标识符，接下来将变量加入符号表，调用完成后，sym指向下一个标识符
 void vardeclaration(void)
 {
 	if (sym == SYM_IDENTIFIER)
@@ -273,6 +275,7 @@ void vardeclaration(void)
 } // vardeclaration
 
 //////////////////////////////////////////////////////////////////////
+// 打印指定范围内的汇编代码
 void listcode(int from, int to)
 {
 	int i;
@@ -286,6 +289,12 @@ void listcode(int from, int to)
 } // listcode
 
 //////////////////////////////////////////////////////////////////////
+
+/*
+	PL/0 的编译程序为每一条 PL/0 源程序的可执行语句生成后缀式目标代码。
+*/
+
+
 void factor(symset fsys)
 {
 	void expression(symset fsys);
@@ -296,7 +305,7 @@ void factor(symset fsys)
 
 	if (inset(sym, facbegsys))
 	{
-		if (sym == SYM_IDENTIFIER)
+		if (sym == SYM_IDENTIFIER)	// 从符号表中找出标识符，然后生成LOD指令，即将变量的值放入栈顶，如果是常量符号，生成LIT指令，将常量值放入栈顶
 		{
 			if ((i = position(id)) == 0)
 			{
@@ -321,7 +330,7 @@ void factor(symset fsys)
 			}
 			getsym();
 		}
-		else if (sym == SYM_NUMBER)
+		else if (sym == SYM_NUMBER)	// 生成LIT指令，将代码中直接出现的常量值放入栈顶
 		{
 			if (num > MAXADDRESS)
 			{
@@ -331,7 +340,7 @@ void factor(symset fsys)
 			gen(LIT, 0, num);
 			getsym();
 		}
-		else if (sym == SYM_LPAREN)
+		else if (sym == SYM_LPAREN)	// 分析括号内的表达式，然后生成相应指令
 		{
 			getsym();
 			set = uniteset(createset(SYM_RPAREN, SYM_NULL), fsys);
@@ -346,7 +355,7 @@ void factor(symset fsys)
 				error(22); // Missing ')'.
 			}
 		}
-		else if(sym == SYM_MINUS) // UMINUS,  Expr -> '-' Expr
+		else if(sym == SYM_MINUS) // UMINUS,  Expr -> '-' Expr。由于是后缀表达式，所以实际生成代码：Fact -> Fact '-'
 		{  
 			 getsym();
 			 factor(fsys);
@@ -371,7 +380,7 @@ void term(symset fsys)
 		factor(set);
 		if (mulop == SYM_TIMES)
 		{
-			gen(OPR, 0, OPR_MUL);
+			gen(OPR, 0, OPR_MUL);	// 后缀乘表达式,  Term -> Fact Fact '*'
 		}
 		else
 		{
@@ -397,7 +406,7 @@ void expression(symset fsys)
 		term(set);
 		if (addop == SYM_PLUS)
 		{
-			gen(OPR, 0, OPR_ADD);
+			gen(OPR, 0, OPR_ADD);	// 后缀加表达式,  Expr -> Term Term '+'
 		}
 		else
 		{
@@ -418,12 +427,12 @@ void condition(symset fsys)
 	{
 		getsym();
 		expression(fsys);
-		gen(OPR, 0, 6);
+		gen(OPR, 0, OPR_ODD);	// 奇偶表达式,  Cond -> 'odd' Expr，生成后缀代码：Cond -> Expr 'odd'
 	}
 	else
 	{
 		set = uniteset(relset, fsys);
-		expression(set);
+		expression(set);	// 分析第一个表达式
 		destroyset(set);
 		if (! inset(sym, relset))
 		{
@@ -433,7 +442,8 @@ void condition(symset fsys)
 		{
 			relop = sym;
 			getsym();
-			expression(fsys);
+			expression(fsys);	// 分析第二个表达式
+			// 后缀关系表达式,  Cond -> Expr Expr Relop
 			switch (relop)
 			{
 			case SYM_EQU:
@@ -466,7 +476,7 @@ void statement(symset fsys)
 	symset set1, set;
 
 	if (sym == SYM_IDENTIFIER)
-	{ // variable assignment
+	{ // variable assignment。先找出符号表中符号，然后读取赋值号，再分析表达式，最后生成STO指令，即将表达式的值存入变量中
 		mask* mk;
 		if (! (i = position(id)))
 		{
@@ -494,7 +504,7 @@ void statement(symset fsys)
 		}
 	}
 	else if (sym == SYM_CALL)
-	{ // procedure call
+	{ // procedure call。从符号表中找出过程入口，生成CAL指令，即调用过程
 		getsym();
 		if (sym != SYM_IDENTIFIER)
 		{
@@ -524,7 +534,7 @@ void statement(symset fsys)
 		getsym();
 		set1 = createset(SYM_THEN, SYM_DO, SYM_NULL);
 		set = uniteset(set1, fsys);
-		condition(set);
+		condition(set);	// 分析条件
 		destroyset(set1);
 		destroyset(set);
 		if (sym == SYM_THEN)
@@ -535,12 +545,13 @@ void statement(symset fsys)
 		{
 			error(16); // 'then' expected.
 		}
+		// 回填！！！文档 11 页
 		cx1 = cx;
 		gen(JPC, 0, 0);
 		statement(fsys);
 		code[cx1].a = cx;	
 	}
-	else if (sym == SYM_BEGIN)
+	else if (sym == SYM_BEGIN)	// 分析复合语句，即begin...end中间的代码
 	{ // block
 		getsym();
 		set1 = createset(SYM_SEMICOLON, SYM_END, SYM_NULL);
@@ -575,7 +586,7 @@ void statement(symset fsys)
 		getsym();
 		set1 = createset(SYM_DO, SYM_NULL);
 		set = uniteset(set1, fsys);
-		condition(set);
+		condition(set);	// 分析条件
 		destroyset(set1);
 		destroyset(set);
 		cx2 = cx;
@@ -588,24 +599,28 @@ void statement(symset fsys)
 		{
 			error(18); // 'do' expected.
 		}
-		statement(fsys);
-		gen(JMP, 0, cx1);
-		code[cx2].a = cx;
+		statement(fsys);	// 分析循环体
+		gen(JMP, 0, cx1);	// 回填 JMP 地址，无条件跳转到条件判断前，即完成一次循环
+		code[cx2].a = cx;	// 回填 JPC 地址，条件为假时，跳转到循环体后面
 	}
 	test(fsys, phi, 19);
 } // statement
 			
 //////////////////////////////////////////////////////////////////////
+// 分析程序体
 void block(symset fsys)
 {
 	int cx0; // initial code index
 	mask* mk;
-	int block_dx;
+	int block_dx;	// 记录"本"过程体的数据区大小，即变量个数（常量直接定义，不需要分配）加上三个内部变量 RA，DL 和 SL
 	int savedTx;
 	symset set1, set;
 
-	dx = 3;
+	// 开始编译一个过程时，要对数据单元的下标 dx 赋初值，表示新开辟一个数据区。
+	dx = 3;	// 初值为 3，因为每个数据区包含三个内部变量 RA，DL 和 SL，即 return address，dynamic link 和 static link
 	block_dx = dx;
+
+	// 每个程序体入口处都生成一条JMP指令，用于在执行时跳过定义内容（因为总是先定义所有需要的变量，常量，过程，然后再定义执行语句），进入执行语句
 	mk = (mask*) &table[tx];
 	mk->address = cx;
 	gen(JMP, 0, 0);
@@ -617,7 +632,7 @@ void block(symset fsys)
 	{
 		if (sym == SYM_CONST)
 		{ // constant declarations
-			getsym();
+			getsym();	// 读标识符
 			do
 			{
 				constdeclaration();
@@ -635,7 +650,7 @@ void block(symset fsys)
 					error(5); // Missing ',' or ';'.
 				}
 			}
-			while (sym == SYM_IDENTIFIER);
+			while (sym == SYM_IDENTIFIER);	// 分号后面如果还是标识符，当作上一句 CONST 的一部分
 		} // if
 
 		if (sym == SYM_VAR)
@@ -660,9 +675,10 @@ void block(symset fsys)
 			}
 			while (sym == SYM_IDENTIFIER);
 		} // if
-		block_dx = dx; //save dx before handling procedure call!
+		block_dx = dx; //save dx before handling procedure call!	子过程需要其自己来维护自己的数据区
 		while (sym == SYM_PROCEDURE)
 		{ // procedure declarations
+			// 已经读了过程标识符，接下来将过程名加入符号表，然后读取结尾分号
 			getsym();
 			if (sym == SYM_IDENTIFIER)
 			{
@@ -683,18 +699,18 @@ void block(symset fsys)
 			{
 				error(5); // Missing ',' or ';'.
 			}
-
-			level++;
-			savedTx = tx;
+			// 定义该过程体，过程体就是一个分程序，所以调用block函数
+			level++;	// 进入一个新的分程序，层次加一
+			savedTx = tx;	// 保存父符号表指针，子过程定义需要自己的符号表
 			set1 = createset(SYM_SEMICOLON, SYM_NULL);
 			set = uniteset(set1, fsys);
-			block(set);
+			block(set);	// 分析子过程体
 			destroyset(set1);
 			destroyset(set);
-			tx = savedTx;
-			level--;
+			tx = savedTx;	// 恢复父符号表指针
+			level--;	// 退回父程序，继续分析父程序
 
-			if (sym == SYM_SEMICOLON)
+			if (sym == SYM_SEMICOLON)	// 分析完子过程体后，读取结尾END关键词后面的分号
 			{
 				getsym();
 				set1 = createset(SYM_IDENTIFIER, SYM_PROCEDURE, SYM_NULL);
@@ -716,19 +732,20 @@ void block(symset fsys)
 		destroyset(set);
 	}
 	while (inset(sym, declbegsys));
+	// 一个过程总是先定义所有需要的常量、变量和过程，然后才是执行语句，上面都while循环定义完了，接下来分析执行语句
 
-	code[mk->address].a = cx;
+	code[mk->address].a = cx;	// 回填程序体第一条指令 JMP 的地址，即进入一个程序跳转到执行语句的开始处执行
 	mk->address = cx;
 	cx0 = cx;
-	gen(INT, 0, block_dx);
+	gen(INT, 0, block_dx);	// 生成INT指令，分配数据区（在数据栈中分配存贮空间）。注意每个过程需要分配的地址为局部变量个数加三个内部变量 RA，DL 和 SL
 	set1 = createset(SYM_SEMICOLON, SYM_END, SYM_NULL);
 	set = uniteset(set1, fsys);
-	statement(set);
+	statement(set);	// 分析过程体执行语句，即本过程begin...end中间的代码，注意上面是声明部分
 	destroyset(set1);
 	destroyset(set);
 	gen(OPR, 0, OPR_RET); // return
 	test(fsys, phi, 8); // test for error: Follow the statement is an incorrect symbol.
-	listcode(cx0, cx);
+	listcode(cx0, cx);	// 每次分析完一个过程体，打印生成的需要执行的汇编代码
 } // block
 
 //////////////////////////////////////////////////////////////////////
@@ -765,13 +782,13 @@ void interpret()
 		case LIT:
 			stack[++top] = i.a;
 			break;
-		case OPR:
+		case OPR:	// 由于生成的是后缀表达式，所以执行时非常容易，读到一个运算符，说明前两个或一个操作数已经翻译完成，放在了栈顶，直接执行对应操作即可
 			switch (i.a) // operator
 			{
 			case OPR_RET:
-				top = b - 1;
-				pc = stack[top + 3];
-				b = stack[top + 2];
+				top = b - 1;	// 对应父过程下一条指令的地址，退出该过程后直接执行父过程调用完成的下一条指令
+				pc = stack[top + 3];	// 通过返回地址找到返回点，即退出子过程，返回父过程
+				b = stack[top + 2];	// 通过动态链找到父过程的基地址，恢复调用前的状态
 				break;
 			case OPR_NEG:
 				stack[top] = -stack[top];
@@ -836,15 +853,18 @@ void interpret()
 			top--;
 			break;
 		case CAL:
-			stack[top + 1] = base(stack, b, i.l);
+			stack[top + 1] = base(stack, b, i.l);	// 建立静态链
 			// generate new block mark
-			stack[top + 2] = b;
-			stack[top + 3] = pc;
-			b = top + 1;
-			pc = i.a;
+			stack[top + 2] = b;	// 建立动态链
+			stack[top + 3] = pc;	// 保存返回地址
+			b = top + 1;	// 改变基地址指针
+			pc = i.a;	// 跳转到过程入口
 			break;
 		case INT:
-			top += i.a;
+			// CAL之后会跳到程序入口，程序入口有一条JMP指令进入执行语句，编译分析执行语句前生成了该指令gen(INT, 0, block_dx)，这里就是执行时分配数据区
+			// 分配量由dx决定，dx仅在entry函数读到变量时加1，这时表明来预留变量的存储空间
+			// 而变量仅在factor函数中读到该变量时才会拿来计算，即需要取出该变量的值，这时才会生成LOD指令，所以全局就这一个生成LOD指令的地方
+			top += i.a;	
 			break;
 		case JMP:
 			pc = i.a;
@@ -894,7 +914,7 @@ void main ()
 	set1 = createset(SYM_PERIOD, SYM_NULL);
 	set2 = uniteset(declbegsys, statbegsys);
 	set = uniteset(set1, set2);
-	block(set);
+	block(set);	// 从主程序进入，分析主程序体
 	destroyset(set1);
 	destroyset(set2);
 	destroyset(set);
@@ -904,20 +924,20 @@ void main ()
 	destroyset(statbegsys);
 	destroyset(facbegsys);
 
-	if (sym != SYM_PERIOD)
+	if (sym != SYM_PERIOD)	// 每个文件均以一个句号结束
 		error(9); // '.' expected.
 	if (err == 0)
 	{
 		hbin = fopen("hbin.txt", "w");
 		for (i = 0; i < cx; i++)
-			fwrite(&code[i], sizeof(instruction), 1, hbin);
+			fwrite(&code[i], sizeof(instruction), 1, hbin);	// 将生成的汇编代码写入文件
 		fclose(hbin);
 	}
 	if (err == 0)
-		interpret();
+		interpret();	// 生成汇编代码后，开始执行
 	else
 		printf("There are %d error(s) in PL/0 program.\n", err);
-	listcode(0, cx);
+	listcode(0, cx);	// 打印生成的所有汇编代码
 } // main
 
 //////////////////////////////////////////////////////////////////////

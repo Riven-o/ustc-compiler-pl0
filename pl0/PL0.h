@@ -14,6 +14,7 @@
 
 #define STACKSIZE  1000   // maximum storage
 
+// 所有符号类型枚举变量：保留关键词、运算符、标识符、数字、空、标点符号
 enum symtype
 {
 	SYM_NULL,
@@ -34,8 +35,8 @@ enum symtype
 	SYM_RPAREN,
 	SYM_COMMA,
 	SYM_SEMICOLON,
-	SYM_PERIOD,
-	SYM_BECOMES,
+	SYM_PERIOD,//句号
+	SYM_BECOMES,//赋值
     SYM_BEGIN,
 	SYM_END,
 	SYM_IF,
@@ -48,16 +49,19 @@ enum symtype
 	SYM_PROCEDURE
 };
 
+// 标识符类型枚举变量（常量，变量，过程）
 enum idtype
 {
 	ID_CONSTANT, ID_VARIABLE, ID_PROCEDURE
 };
 
+// 指令类型枚举变量
 enum opcode
 {
 	LIT, OPR, LOD, STO, CAL, INT, JMP, JPC
 };
 
+// 算术和逻辑运算符枚举变量，均是后缀表达式，即生成表达式计算指令后，再生成运算指令
 enum oprcode
 {
 	OPR_RET, OPR_NEG, OPR_ADD, OPR_MIN,
@@ -120,15 +124,16 @@ int  num;        // last number read
 int  cc;         // character count
 int  ll;         // line length
 int  kk;
-int  err;
-int  cx;         // index of current instruction to be generated.
+int  err;		 // 错误个数
+int  cx;         // index of current instruction to be generated. CX 表示下一条即将生成的目标指令的地址
 int  level = 0;
-int  tx = 0;
+int  tx = 0;	 // 指向符号表顶部的指针
 
-char line[80];
+char line[80];	// 读取一行源程序
 
 instruction code[CXMAX];
 
+// 所有保留关键词，用于比较输入的标识符是否为保留关键词
 char* word[NRW + 1] =
 {
 	"", /* place holder */
@@ -136,18 +141,21 @@ char* word[NRW + 1] =
 	"odd", "procedure", "then", "var", "while"
 };
 
+// 所有保留关键词对应 symtype 枚举变量，用于设置 sys 变量
 int wsym[NRW + 1] =
 {
 	SYM_NULL, SYM_BEGIN, SYM_CALL, SYM_CONST, SYM_DO, SYM_END,
 	SYM_IF, SYM_ODD, SYM_PROCEDURE, SYM_THEN, SYM_VAR, SYM_WHILE
 };
 
+// 除了保留关键词，自定义标识符，数字，赋值和比较运算符，其他符号的符号表，算数运算符，标点，括号等
 int ssym[NSYM + 1] =
 {
 	SYM_NULL, SYM_PLUS, SYM_MINUS, SYM_TIMES, SYM_SLASH,
 	SYM_LPAREN, SYM_RPAREN, SYM_EQU, SYM_COMMA, SYM_PERIOD, SYM_SEMICOLON
 };
 
+// 除了保留关键词，自定义标识符，数字，赋值和比较运算符，其他符号的符号表对应的字符，算数运算符，标点，括号等
 char csym[NSYM + 1] =
 {
 	' ', '+', '-', '*', '/', '(', ')', '=', ',', '.', ';'
@@ -157,8 +165,9 @@ char csym[NSYM + 1] =
 char* mnemonic[MAXINS] =
 {
 	"LIT", "OPR", "LOD", "STO", "CAL", "INT", "JMP", "JPC"
-};
+};	// 指令伪操作符
 
+// 常量结构体：标识符名字，类型，值。存在符号表中，与变量和过程在内存中不区分，操作时 kind==SYM_CONST 区分
 typedef struct
 {
 	char name[MAXIDLEN + 1];
@@ -166,8 +175,10 @@ typedef struct
 	int  value;
 } comtab;
 
+// 符号表：保存每个符号的属性，常量就是comtab结构体，变量和过程就是mask结构体
 comtab table[TXMAX];
 
+// 变量和过程结构体：名字，类型，层次，地址（变量是修正量/偏移量，过程则是入口地址）。存在符号表中，与常量在内存中不区分，操作时 kind==SYM_VAR 或 SYM_PROCEDURE 区分
 typedef struct
 {
 	char  name[MAXIDLEN + 1];
