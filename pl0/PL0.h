@@ -1,6 +1,7 @@
 #include <stdio.h>
 
-#define NRW        11     // number of reserved words
+// #define NRW        11     // number of reserved words
+#define NRW        12     // add 'print'
 #define TXMAX      500    // length of identifier table
 #define MAXNUMLEN  14     // maximum number of digits in numbers
 #define NSYM       10     // maximum number of symbols in array ssym and csym
@@ -10,7 +11,8 @@
 #define MAXLEVEL   32     // maximum depth of nesting block
 #define CXMAX      500    // size of code array
 
-#define MAXSYM     30     // maximum number of symbols  
+// #define MAXSYM     30     // maximum number of symbols  
+#define MAXSYM     31     // add 'SYM_PRINT'
 
 #define STACKSIZE  1000   // maximum storage
 
@@ -46,19 +48,28 @@ enum symtype
 	SYM_CALL,
 	SYM_CONST,
 	SYM_VAR,
-	SYM_PROCEDURE
+	SYM_PROCEDURE,
+	// SYM_ARRAY,	// array
+	// SYM_LSQUARE,	// [
+	// SYM_RSQUARE,	// ]
+	// SYM_LBRACE,	// {
+	// SYM_RBRACE, // }
+	SYM_PRINT	// print
 };
 
 // 标识符类型枚举变量（常量，变量，过程）
 enum idtype
 {
 	ID_CONSTANT, ID_VARIABLE, ID_PROCEDURE
+	// ID_CONSTANT, ID_VARIABLE, ID_PROCEDURE, ID_ARRAY
 };
 
 // 指令类型枚举变量
 enum opcode
 {
-	LIT, OPR, LOD, STO, CAL, INT, JMP, JPC
+	LIT, OPR, LOD, STO, CAL, INT, JMP, JPC,
+	PRINT
+	// LIT, OPR, LOD, STO, CAL, INT, JMP, JPC, LEA, LODA, STOA
 };
 
 // 算术和逻辑运算符枚举变量，均是后缀表达式，即生成表达式计算指令后，再生成运算指令
@@ -67,7 +78,8 @@ enum oprcode
 	OPR_RET, OPR_NEG, OPR_ADD, OPR_MIN,
 	OPR_MUL, OPR_DIV, OPR_ODD, OPR_EQU,
 	OPR_NEQ, OPR_LES, OPR_LEQ, OPR_GTR,
-	OPR_GEQ
+	OPR_GEQ,
+	OPR_NLN	// '\n'
 };
 
 
@@ -138,14 +150,16 @@ char* word[NRW + 1] =
 {
 	"", /* place holder */
 	"begin", "call", "const", "do", "end","if",
-	"odd", "procedure", "then", "var", "while"
+	"odd", "procedure", "then", "var", "while",
+	"print"
 };
 
 // 所有保留关键词对应 symtype 枚举变量，用于设置 sys 变量
 int wsym[NRW + 1] =
 {
 	SYM_NULL, SYM_BEGIN, SYM_CALL, SYM_CONST, SYM_DO, SYM_END,
-	SYM_IF, SYM_ODD, SYM_PROCEDURE, SYM_THEN, SYM_VAR, SYM_WHILE
+	SYM_IF, SYM_ODD, SYM_PROCEDURE, SYM_THEN, SYM_VAR, SYM_WHILE,
+	SYM_PRINT
 };
 
 // 除了保留关键词，自定义标识符，数字，赋值和比较运算符，其他符号的符号表，算数运算符，标点，括号等
@@ -153,18 +167,23 @@ int ssym[NSYM + 1] =
 {
 	SYM_NULL, SYM_PLUS, SYM_MINUS, SYM_TIMES, SYM_SLASH,
 	SYM_LPAREN, SYM_RPAREN, SYM_EQU, SYM_COMMA, SYM_PERIOD, SYM_SEMICOLON
+	// SYM_LSQUARE, SYM_RSQUARE, SYM_LBRACE, SYM_RBRACE
 };
 
 // 除了保留关键词，自定义标识符，数字，赋值和比较运算符，其他符号的符号表对应的字符，算数运算符，标点，括号等
 char csym[NSYM + 1] =
 {
 	' ', '+', '-', '*', '/', '(', ')', '=', ',', '.', ';'
+	// '[' , ']', '{', '}'
 };
 
-#define MAXINS   8
+// #define MAXINS   8
+#define MAXINS   9	// add 'PRINT'
 char* mnemonic[MAXINS] =
 {
-	"LIT", "OPR", "LOD", "STO", "CAL", "INT", "JMP", "JPC"
+	"LIT", "OPR", "LOD", "STO", "CAL", "INT", "JMP", "JPC",
+	"PRINT"
+	// "LEA", "LODA", "STOA"
 };	// 指令伪操作符
 
 // 常量结构体：标识符名字，类型，值。存在符号表中，与变量和过程在内存中不区分，操作时 kind==SYM_CONST 区分

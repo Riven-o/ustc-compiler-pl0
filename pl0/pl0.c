@@ -371,7 +371,8 @@ void term(symset fsys)
 	int mulop;
 	symset set;
 	
-	set = uniteset(fsys, createset(SYM_TIMES, SYM_SLASH, SYM_NULL));
+	// set = uniteset(fsys, createset(SYM_TIMES, SYM_SLASH, SYM_NULL));
+	set = uniteset(fsys, createset(SYM_TIMES, SYM_SLASH, SYM_COMMA, SYM_RPAREN, SYM_NULL)); // print语句中表达式的follow={','，')'}
 	factor(set);
 	while (sym == SYM_TIMES || sym == SYM_SLASH)
 	{
@@ -602,6 +603,35 @@ void statement(symset fsys)
 		statement(fsys);	// 分析循环体
 		gen(JMP, 0, cx1);	// 回填 JMP 地址，无条件跳转到条件判断前，即完成一次循环
 		code[cx2].a = cx;	// 回填 JPC 地址，条件为假时，跳转到循环体后面
+	}
+	else if (sym == SYM_PRINT)
+	{ // print
+		int is_print_none = 0;
+		getsym();
+		if (sym != SYM_LPAREN)
+		{
+			// error()
+			printf("Error: '(' expected.\n");
+		}
+		do{
+			getsym();
+			if (sym == SYM_RPAREN)
+			{
+				is_print_none = 1;
+				gen(OPR, 0, OPR_NLN);	// print(None) 生成打印换行指令
+				break;
+			}
+			expression(fsys);	// 分析表达式，结果放在栈顶
+			gen(PRINT, 0, 0);	// 生成打印指令，打印栈顶的值
+		}while(sym == SYM_COMMA);
+		if (sym != SYM_RPAREN)
+		{
+			// error()
+			printf("Error: ')' expected.\n");
+		}
+		if (!is_print_none)
+			gen(OPR, 0, OPR_NLN);	// print(...) 生成打印换行指令
+		getsym();
 	}
 	test(fsys, phi, 19);
 } // statement
@@ -842,6 +872,9 @@ void interpret()
 				top--;
 				stack[top] = stack[top] <= stack[top + 1];
 				break;
+			case OPR_NLN:
+				printf("\n");
+				break;
 			} // switch
 			break;
 		case LOD:
@@ -872,6 +905,10 @@ void interpret()
 		case JPC:
 			if (stack[top] == 0)
 				pc = i.a;
+			top--;
+			break;
+		case PRINT:
+			printf("%d ", stack[top]);
 			top--;
 			break;
 		} // switch
