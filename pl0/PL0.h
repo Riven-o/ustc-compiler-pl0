@@ -3,7 +3,6 @@
 #define TRUE	   		1																			// e1
 #define FALSE	   		0
 
-// #define NRW        11     // number of reserved words
 #define NRW        12     // add 'print'
 #define TXMAX      500    // length of identifier table
 #define MAXNUMLEN  14     // maximum number of digits in numbers
@@ -17,6 +16,7 @@
 #define CXMAX  500    // size of code array
 #define MAXARYDIM  	10	   // maximum number of dimensions of an array							// e1
 #define MAXARYVOL  	200	   // maximum volume of a dimension of an array
+#define MAXELIF			20	   // maximum number of elifs
 
 #define CONST_EXPR 		0	   // the expression is constant
 #define UNCONST_EXPR 	1	   // the expression is not constant
@@ -60,6 +60,11 @@ enum symtype
 	SYM_WHILE,
 	SYM_DO,
 	SYM_CALL,
+    SYM_TRUE,					// e1
+    SYM_FALSE,
+    SYM_ELSE,
+    SYM_ELIF,
+    SYM_NOT,
     SYM_FOR,
     SYM_OR,
     SYM_AND,
@@ -70,7 +75,6 @@ enum symtype
     SYM_AMPERSAND,
     SYM_VOID,
     SYM_INT,
-	SYM_ARRAY,	// array
     SYM_LSQUARE,	// [
 	SYM_RSQUARE,	// ]
 	SYM_LBRACE,	// {
@@ -82,30 +86,29 @@ enum symtype
 enum idtype
 {
 	ID_CONSTANT, ID_VARIABLE, ID_PROCEDURE, ID_ARRAY, ID_POINTER, ID_VOID, ID_LABEL
-	// ID_CONSTANT, ID_VARIABLE, ID_PROCEDURE, ID_ARRAY
 };
 
 enum environment                                           										//e1
 {
-    ENV_FOR
+    ENV_FOR, ENV_WHILE
 };
+
 
 // 指令类型枚举变量
 enum opcode
 {
 	LIT, OPR, LOD, STO, CAL, INT, JMP, JPC,
-	PRINT, STOI, STOS, LODS, LODI, JNDN, JND, LEA, CALS, STOA, RET, EXT, JET
-	// LIT, OPR, LOD, STO, CAL, INT, JMP, JPC, LEA, LODA, STOA
+	PRINT, STOI, STOS, LODS, LODI, JNDN, JND, LEA, CALS, RET, EXT, JET
 };
 
 // 算术和逻辑运算符枚举变量，均是后缀表达式，即生成表达式计算指令后，再生成运算指令
 enum oprcode
 {
-	OPR_RET, OPR_NEG, OPR_ADD, OPR_MIN,
+	OPR_NEG, OPR_ADD, OPR_MIN,
 	OPR_MUL, OPR_DIV, OPR_ODD, OPR_EQU,
 	OPR_NEQ, OPR_LES, OPR_LEQ, OPR_GTR,
 	OPR_GEQ, OPR_OR, OPR_AND, OPR_ITOB,
-	OPR_NLN	// '\n'
+    OPR_NOT, OPR_RET
 };
 
 
@@ -251,13 +254,12 @@ char csym[NSYM + 1] =
 	'[' , ']', '{', '}'
 };
 
-// #define MAXINS   8
-#define MAXINS   12	// add 'PRINT'
-char* mnemonic[MAXINS] =
-{
-	"LIT", "OPR", "LOD", "STO", "CAL", "INT", "JMP", "JPC",
-	"PRINT", "LEA", "LODA", "STOA"
-};	// 指令伪操作符
+#define MAXINS   20
+char* mnemonic[MAXINS] ={
+                "LIT", "OPR", "LOD", "LODI", "LODS", "LEA", "STO", "STOI", "STOS",
+                "CAL", "CALS", "INT", "JMP", "JPC", "JND", "JNDN", "RET",
+                "EXT", "JET", "PRINT"};
+	// 指令伪操作符
 
 // 常量结构体：标识符名字，类型，值。存在符号表中，与变量和过程在内存中不区分，操作时 kind==SYM_CONST 区分
 typedef struct

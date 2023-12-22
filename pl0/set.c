@@ -201,6 +201,7 @@ void destroyset(symset s)
 {
     snode* p;
 
+
     while (s)
     {
         p = s;
