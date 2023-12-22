@@ -188,10 +188,10 @@ void test(symset s1, symset s2, int n)
 //////////////////////////////////////////////////////////////////////
 int dx;  // data allocation index
 
-// enter object(constant, variable or procedre) into table.
+// enter object (constant, variable, procedure, or array) into table.
 void enter(int kind)
 {
-	mask* mk;
+	mask *mk;
 
 	tx++;
 	strcpy(table[tx].name, id);
@@ -207,14 +207,28 @@ void enter(int kind)
 		table[tx].value = num;
 		break;
 	case ID_VARIABLE:
-		mk = (mask*) &table[tx];
+		mk = (mask *)&table[tx];
 		mk->level = level;
 		mk->address = dx++;
 		break;
 	case ID_PROCEDURE:
-		mk = (mask*) &table[tx];
+		mk = (mask *)&table[tx];
 		mk->level = level;
 		break;
+	// 699
+	case ID_ARRAY:
+		mk = (mask *)&table[tx];
+		mk->level = level;
+		mk->address = dx;
+		mk->size = (int)num;
+		dx = dx + (int)num;
+		break;
+	case ID_POINTER:
+		mk = (mask *)&table[tx];
+		mk->level = level;
+		mk->address = dx++;
+		break;
+	// 699
 	} // switch
 } // enter
 
@@ -272,6 +286,84 @@ void vardeclaration(void)
 	}
 } // vardeclaration
 
+// 666
+//////////////////////////////////////////////////////////////////////
+void arrdeclaration(void)
+{
+	if (sym == SYM_IDENTIFIER)
+	{
+		getsym();
+		while(sym == SYM_LPAREN)
+		{
+			getsym();
+			if (sym == SYM_NUMBER)
+			{
+				if (num > 0)
+				{
+					enter(ID_ARRAY);
+					getsym();
+					if (sym == SYM_RPAREN)
+					{
+						getsym();
+					}
+					else
+					{
+						error(27); // 缺少右括号
+					}
+				}
+				else
+				{
+					error(29); // 数组大小错误
+				}
+			}
+			else
+			{
+				error(28); // 请输入数组大小
+			}
+		}
+	}
+	else
+	{
+		error(4);
+	}
+} // arrdeclaration
+// 666
+
+// 999
+//////////////////////////////////////////////////////////////////////
+void pointerdeclaration(void)
+{
+    if (sym == SYM_IDENTIFIER)
+    {
+        getsym();
+        
+        int ptr_level = 0;
+
+        // Check for '*' to determine the level of the pointer
+        while (sym == SYM_TIMES && csym[sym] == '*')
+        {
+            ptr_level++;
+            getsym();
+        }
+
+        if (ptr_level > 0)
+        {
+            enter(ID_POINTER);
+            table[tx].ptr_level = ptr_level;
+            getsym();
+        }
+        else
+        {
+            error(5); // Expecting '*' after identifier for pointer declaration.
+        }
+    }
+    else
+    {
+        error(4); // There must be an identifier to follow 'const', 'var', or 'procedure'.
+    }
+} // pointerdeclaration
+// 999
+
 //////////////////////////////////////////////////////////////////////
 void listcode(int from, int to)
 {
@@ -286,57 +378,111 @@ void listcode(int from, int to)
 } // listcode
 
 //////////////////////////////////////////////////////////////////////
-void factor(symset fsys)
+// Factor
+void factor(int* fsys, int* ssys, int n)
 {
-	void expression(symset fsys);
 	int i;
-	symset set;
-	
+	int m;
+
 	test(facbegsys, fsys, 24); // The symbol can not be as the beginning of an expression.
 
-	if (inset(sym, facbegsys))
+	while (inset(sym, facbegsys))
 	{
 		if (sym == SYM_IDENTIFIER)
 		{
-			if ((i = position(id)) == 0)
+			i = position(id);
+			if (i == 0)
 			{
 				error(11); // Undeclared identifier.
 			}
 			else
 			{
-				switch (table[i].kind)
+				mask* mk = (mask*)&table[i];
+				getsym();
+
+				switch (mk->kind)
 				{
-					mask* mk;
 				case ID_CONSTANT:
-					gen(LIT, 0, table[i].value);
+					if (CONST_CHECK)
+					{ // UNCONST_EXPR
+						gen(LIT, 0, mk->value);
+					}
+					else
+					{ // CONST_EXPR
+						error(28); // Variables can not be in a const expression.
+						test(ssys, ssys, 19); // Incorrect symbol;
+					}
 					break;
 				case ID_VARIABLE:
-					mk = (mask*) &table[i];
-					gen(LOD, level - mk->level, mk->address);
+					if (CONST_CHECK)
+					{ // UNCONST_EXPR
+						gen(LOD, level - mk->level, mk->address);
+					}
+					else
+					{ // CONST_EXPR
+						error(28); // Variables can not be in a const expression.
+						test(ssys, ssys, 19); // Incorrect symbol;
+					}
 					break;
 				case ID_PROCEDURE:
 					error(21); // Procedure identifier can not be in an expression.
 					break;
-				} // switch
+				// 699
+				case ID_ARRAY:
+					if (CONST_CHECK)
+					{ // UNCONST_EXPR
+						gen(LIT, 0, mk->address);
+						getarrayaddr(i, ssys);
+						gen(OPR, 0, OPR_ADD);
+						gen(LODI, level - mk->level, 0);
+					}
+					else
+					{ // CONST_EXPR
+						error(28); // Variables can not be in a const expression.
+						test(ssys, ssys, 19); // Incorrect symbol;
+					}
+					break;
+				case ID_POINTER:
+					if (CONST_CHECK)
+					{ // UNCONST_EXPR
+						gen(LOD, level - mk->level, mk->address);
+					}
+					else
+					{ // CONST_EXPR
+						error(28); // Variables can not be in a const expression.
+						test(ssys, ssys, 19); // Incorrect symbol;
+					}
+					break;
+				// 699
+				}
 			}
-			getsym();
 		}
+		// 699
 		else if (sym == SYM_NUMBER)
 		{
-			if (num > MAXADDRESS)
-			{
-				error(25); // The number is too great.
-				num = 0;
+			if (CONST_CHECK)
+			{ // UNCONST_EXPR
+				if (num > MAXADDRESS)
+				{
+					error(25); // The number is too great.
+					num = 0;
+				}
+				gen(LIT, 0, num);
 			}
-			gen(LIT, 0, num);
+			else
+			{ // CONST_EXPR
+				error(28); // Variables can not be in a const expression.
+				test(ssys, ssys, 19); // Incorrect symbol;
+			}
 			getsym();
 		}
+		// 699
 		else if (sym == SYM_LPAREN)
 		{
 			getsym();
-			set = uniteset(createset(SYM_RPAREN, SYM_NULL), fsys);
-			expression(set);
-			destroyset(set);
+			memcpy(ssys, ssys + 1, sizeof(int) * (n - 1));
+			ssys[n - 1] = SYM_RPAREN;
+			expression(fsys, ssys, n);
 			if (sym == SYM_RPAREN)
 			{
 				getsym();
@@ -346,15 +492,11 @@ void factor(symset fsys)
 				error(22); // Missing ')'.
 			}
 		}
-		else if(sym == SYM_MINUS) // UMINUS,  Expr -> '-' Expr
-		{  
-			 getsym();
-			 factor(fsys);
-			 gen(OPR, 0, OPR_NEG);
-		}
-		test(fsys, createset(SYM_LPAREN, SYM_NULL), 23);
-	} // if
+
+		test(ssys, facbegsys, 23); // The symbol can not be followed by a factor.
+	}
 } // factor
+
 
 //////////////////////////////////////////////////////////////////////
 void term(symset fsys)
