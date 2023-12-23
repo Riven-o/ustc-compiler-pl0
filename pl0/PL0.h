@@ -55,6 +55,7 @@ enum symtype
 	// SYM_LBRACE,	// {
 	// SYM_RBRACE, // }
 	SYM_PRINT	// print
+    	SYM_SCOPE       // scope resolution operator ::
 };
 
 // 标识符类型枚举变量（常量，变量，过程）
@@ -166,14 +167,14 @@ int wsym[NRW + 1] =
 int ssym[NSYM + 1] =
 {
 	SYM_NULL, SYM_PLUS, SYM_MINUS, SYM_TIMES, SYM_SLASH,
-	SYM_LPAREN, SYM_RPAREN, SYM_EQU, SYM_COMMA, SYM_PERIOD, SYM_SEMICOLON
+	SYM_LPAREN, SYM_RPAREN, SYM_EQU, SYM_COMMA, SYM_PERIOD, SYM_SEMICOLON, SYM_SCOPE
 	// SYM_LSQUARE, SYM_RSQUARE, SYM_LBRACE, SYM_RBRACE
 };
 
 // 除了保留关键词，自定义标识符，数字，赋值和比较运算符，其他符号的符号表对应的字符，算数运算符，标点，括号等
 char csym[NSYM + 1] =
 {
-	' ', '+', '-', '*', '/', '(', ')', '=', ',', '.', ';'
+	' ', '+', '-', '*', '/', '(', ')', '=', ',', '.', ';', '::'
 	// '[' , ']', '{', '}'
 };
 
@@ -192,6 +193,7 @@ typedef struct
 	char name[MAXIDLEN + 1];
 	int  kind;
 	int  value;
+    	int  level;  // level of the identifier for scope resolution
 } comtab;
 
 // 符号表：保存每个符号的属性，常量就是comtab结构体，变量和过程就是mask结构体
