@@ -15,7 +15,7 @@ typedef struct
 
 arr array, array_table[TXMAX];	// 数组符号表
 
-变量和过程结构体：名字，类型，指针级别（指针变量用），层次，地址（变量是修正量/偏移量，过程则是入口地址）。存在符号表中，与常量在内存中不区分，操作时 kind==SYM_VAR 或 SYM_PROCEDURE 区分
+变量和过程结构体
 typedef struct
 {
 	char  name[MAXIDLEN + 1];
@@ -24,6 +24,7 @@ typedef struct
 	short address;
 } mask;
 
+arr array, array_table[TXMAX];
 
 */
 

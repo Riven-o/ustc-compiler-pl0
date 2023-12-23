@@ -228,7 +228,7 @@ typedef struct
 	int address;				// 数组首地址
 } arr;
 
-arr array, array_table[TXMAX];	// 数组符号表
+arr array, array_table[TXMAX];	// 全局数组变量，数组符号表
 
 FILE* infile;
 
