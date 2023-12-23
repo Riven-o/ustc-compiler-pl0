@@ -11,6 +11,9 @@
 #include "PL0.h"
 #include "set.c"
 
+char scope[MAXIDLEN + 1]; // 假设 MAXIDLEN 是一个足够大的常量
+int scopeLevel;
+
 //////////////////////////////////////////////////////////////////////
 // print error message.
 void error(int n)
@@ -55,7 +58,8 @@ void getsym(void)
 {
 	int i, k;
 	char a[MAXIDLEN + 1];
-
+    scope[0] = '\0'; // 初始化为空字符串
+    scopeLevel = 0; // 初始化作用域层级
 	while (ch == ' '||ch == '\t')
 		getch();
 
@@ -96,7 +100,41 @@ void getsym(void)
 	else if (ch == ':')
 	{
 		getch();
-		if (ch == '=')
+
+        if (ch == ':') {
+            sym = SYM_SCOPE;   // ::
+
+            // 将当前作用域添加到 scope 变量中
+            strcat(scope, id);
+            scopeLevel++;
+
+            getch();  // 跳过第二个冒号
+            // 继续处理后续的标识符或作用域操作符
+            while (ch != ' ' && ch != '\t' && ch != '\n' && ch != EOF) {
+                if (ch == ':') {
+                    getch();
+                    if (ch == ':') {
+                        getch();
+                        strcat(scope, "::");
+                        scopeLevel++;
+                    } else {
+                        // 错误处理
+                        // error( );
+                    }
+                } else if (isalpha(ch) || isdigit(ch)) {
+                    // 处理后续的标识符
+                    k = 0;
+                    do {
+                        if (k < MAXIDLEN)
+                            a[k++] = ch;
+                        getch();
+                    } while (isalpha(ch) || isdigit(ch));
+                    a[k] = 0;
+                    strcat(scope, a);
+                }
+            }
+        } 
+		else if (ch == '=')
 		{
 			sym = SYM_BECOMES; // :=
 			getch();
@@ -157,17 +195,25 @@ void getsym(void)
 
 //////////////////////////////////////////////////////////////////////
 // generates (assembles) an instruction.
-void gen(int x, int y, int z)
-{
-	if (cx > CXMAX)
-	{
-		printf("Fatal Error: Program too long.\n");
-		exit(1);
-	}
-	code[cx].f = x;
-	code[cx].l = y;
-	code[cx++].a = z;
-} // gen
+void gen(int x, int y, int z) {
+    if (cx > CXMAX) {
+        printf("Fatal Error: Program too long.\n");
+        exit(1);
+    }
+
+    if (x == LOD || x == STO) {
+        // 对于 LOD 和 STO 指令，调整 y 以匹配正确的作用域层级
+        int diff = level - y; // level 是当前作用域层级，y 是变量的作用域层级
+        code[cx].f = x;
+        code[cx].l = diff;
+        code[cx++].a = z;
+    } else {
+        // 其他指令保持原样
+        code[cx].f = x;
+        code[cx].l = y;
+        code[cx++].a = z;
+    }
+}
 
 //////////////////////////////////////////////////////////////////////
 // tests if error occurs and skips all symbols that do not belongs to s1 or s2.
@@ -232,16 +278,41 @@ void enter(int kind)
 	} // switch
 } // enter
 
+
 //////////////////////////////////////////////////////////////////////
-// locates identifier in symbol table.
-int position(char* id)
-{
-	int i;
-	strcpy(table[0].name, id);
-	i = tx + 1;
-	while (strcmp(table[--i].name, id) != 0);
-	return i;
-} // position
+int position(char *id) {
+    int i;
+    char *delimiter = "::";
+    char *token;
+    char scope[MAXIDLEN + 1] = {0};
+    char name[MAXIDLEN + 1] = {0};
+
+    // 将 scope 和 name 分离，例如 "p1::p2::i" -> scope: "p1::p2", name: "i"
+    strncpy(scope, id, MAXIDLEN);
+    token = strrchr(scope, delimiter[0]);
+    if (token != NULL) {
+        strcpy(name, token + 2); // +2 跳过 "::"
+        *token = '\0';           // 截断字符串得到 scope
+    } else {
+        strcpy(name, id);
+    }
+
+    int scopeDepth = 0; // 初始化作用域深度
+    token = strtok(scope, delimiter);
+    while (token != NULL) {
+        scopeDepth++; // 每找到一个作用域标识符，深度增加
+        token = strtok(NULL, delimiter);
+    }
+
+    for (i = tx; i >= 0; i--) {
+        if (strcmp(table[i].name, name) == 0 && table[i].scopeLevel == scopeDepth) {
+            return i;
+        }
+    }
+
+    return 0; // 没有找到符号
+}
+
 
 //////////////////////////////////////////////////////////////////////
 void constdeclaration()
@@ -378,124 +449,70 @@ void listcode(int from, int to)
 } // listcode
 
 //////////////////////////////////////////////////////////////////////
-// Factor
-void factor(int* fsys, int* ssys, int n)
-{
-	int i;
-	int m;
+void factor(symset fsys) {
+    int i;
+    symset set;
 
-	test(facbegsys, fsys, 24); // The symbol can not be as the beginning of an expression.
+    test(facbegsys, fsys, 24); // The symbol can not be as the beginning of an expression.
 
-	while (inset(sym, facbegsys))
-	{
-		if (sym == SYM_IDENTIFIER)
-		{
-			i = position(id);
-			if (i == 0)
-			{
-				error(11); // Undeclared identifier.
-			}
-			else
-			{
-				mask* mk = (mask*)&table[i];
-				getsym();
+    if (inset(sym, facbegsys)) {
+        if (sym == SYM_IDENTIFIER) {
+            char scope[MAXIDLEN + 1] = {0};  // Store scope name if any
+            strcpy(scope, id);              // Copy current identifier
+            getsym();
 
-				switch (mk->kind)
-				{
-				case ID_CONSTANT:
-					if (CONST_CHECK)
-					{ // UNCONST_EXPR
-						gen(LIT, 0, mk->value);
-					}
-					else
-					{ // CONST_EXPR
-						error(28); // Variables can not be in a const expression.
-						test(ssys, ssys, 19); // Incorrect symbol;
-					}
-					break;
-				case ID_VARIABLE:
-					if (CONST_CHECK)
-					{ // UNCONST_EXPR
-						gen(LOD, level - mk->level, mk->address);
-					}
-					else
-					{ // CONST_EXPR
-						error(28); // Variables can not be in a const expression.
-						test(ssys, ssys, 19); // Incorrect symbol;
-					}
-					break;
-				case ID_PROCEDURE:
-					error(21); // Procedure identifier can not be in an expression.
-					break;
-				// 699
-				case ID_ARRAY:
-					if (CONST_CHECK)
-					{ // UNCONST_EXPR
-						gen(LIT, 0, mk->address);
-						getarrayaddr(i, ssys);
-						gen(OPR, 0, OPR_ADD);
-						gen(LODI, level - mk->level, 0);
-					}
-					else
-					{ // CONST_EXPR
-						error(28); // Variables can not be in a const expression.
-						test(ssys, ssys, 19); // Incorrect symbol;
-					}
-					break;
-				case ID_POINTER:
-					if (CONST_CHECK)
-					{ // UNCONST_EXPR
-						gen(LOD, level - mk->level, mk->address);
-					}
-					else
-					{ // CONST_EXPR
-						error(28); // Variables can not be in a const expression.
-						test(ssys, ssys, 19); // Incorrect symbol;
-					}
-					break;
-				// 699
-				}
-			}
-		}
-		// 699
-		else if (sym == SYM_NUMBER)
-		{
-			if (CONST_CHECK)
-			{ // UNCONST_EXPR
-				if (num > MAXADDRESS)
-				{
-					error(25); // The number is too great.
-					num = 0;
-				}
-				gen(LIT, 0, num);
-			}
-			else
-			{ // CONST_EXPR
-				error(28); // Variables can not be in a const expression.
-				test(ssys, ssys, 19); // Incorrect symbol;
-			}
-			getsym();
-		}
-		// 699
-		else if (sym == SYM_LPAREN)
-		{
-			getsym();
-			memcpy(ssys, ssys + 1, sizeof(int) * (n - 1));
-			ssys[n - 1] = SYM_RPAREN;
-			expression(fsys, ssys, n);
-			if (sym == SYM_RPAREN)
-			{
-				getsym();
-			}
-			else
-			{
-				error(22); // Missing ')'.
-			}
-		}
+            while (sym == SYM_SCOPE) {      // Handle scope resolution operator
+                getsym();
+                if (sym != SYM_IDENTIFIER) {
+                    // error(/* appropriate error code */);
+                }
+                strcat(scope, "::");
+                strcat(scope, id);          // Append scoped variable name
+                getsym();
+            }
 
-		test(ssys, facbegsys, 23); // The symbol can not be followed by a factor.
-	}
-} // factor
+            if ((i = position(scope)) == 0) {
+                error(11); // Undeclared identifier.
+            } else {
+                mask* mk;
+                switch (table[i].kind) {
+                    case ID_CONSTANT:
+                        gen(LIT, 0, table[i].value);
+                        break;
+                    case ID_VARIABLE:
+                        mk = (mask*) &table[i];
+                        gen(LOD, level - mk->level, mk->address);
+                        break;
+                    case ID_PROCEDURE:
+                        error(21); // Procedure identifier can not be in an expression.
+                        break;
+                }
+            }
+        } else if (sym == SYM_NUMBER) {
+            if (num > MAXADDRESS) {
+                error(25); // The number is too great.
+                num = 0;
+            }
+            gen(LIT, 0, num);
+            getsym();
+        } else if (sym == SYM_LPAREN) {
+            getsym();
+            set = uniteset(createset(SYM_RPAREN, SYM_NULL), fsys);
+            expression(set);
+            destroyset(set);
+            if (sym == SYM_RPAREN) {
+                getsym();
+            } else {
+                error(22); // Missing ')'.
+            }
+        } else if (sym == SYM_MINUS) { // UMINUS,  Expr -> '-' Expr
+            getsym();
+            factor(fsys);
+            gen(OPR, 0, OPR_NEG);
+        }
+        test(fsys, createset(SYM_LPAREN, SYM_NULL), 23);
+    }
+}
 
 
 //////////////////////////////////////////////////////////////////////
@@ -602,39 +619,49 @@ void condition(symset fsys)
 } // condition
 
 //////////////////////////////////////////////////////////////////////
-void statement(symset fsys)
-{
-	int i, cx1, cx2;
-	symset set1, set;
+void statement(symset fsys) {
+    int i, cx1, cx2;
+    symset set1, set;
+    char scopedVar[MAXIDLEN * 2 + 1] = {0}; // 增加长度以存储作用域信息
 
-	if (sym == SYM_IDENTIFIER)
-	{ // variable assignment
-		mask* mk;
-		if (! (i = position(id)))
-		{
-			error(11); // Undeclared identifier.
-		}
-		else if (table[i].kind != ID_VARIABLE)
-		{
-			error(12); // Illegal assignment.
-			i = 0;
-		}
-		getsym();
-		if (sym == SYM_BECOMES)
-		{
-			getsym();
-		}
-		else
-		{
-			error(13); // ':=' expected.
-		}
-		expression(fsys);
-		mk = (mask*) &table[i];
-		if (i)
-		{
-			gen(STO, level - mk->level, mk->address);
-		}
-	}
+    if (sym == SYM_IDENTIFIER) {
+        // 复制当前标识符到 scopedVar
+        strcpy(scopedVar, id);
+        getsym();
+
+        // 处理作用域运算符
+        while (sym == SYM_SCOPE) {
+            strcat(scopedVar, "::");
+            getsym();
+            if (sym == SYM_IDENTIFIER) {
+                strcat(scopedVar, id);
+                getsym();
+            } else {
+                // error(/* appropriate error code */);
+                break;
+            }
+        }
+
+        // 检查变量是否已声明
+        if (!(i = position(scopedVar))) {
+            error(11); // Undeclared identifier.
+        } else if (table[i].kind != ID_VARIABLE) {
+            error(12); // Illegal assignment.
+            i = 0;
+        }
+
+        if (sym == SYM_BECOMES) {
+            getsym();
+        } else {
+            error(13); // ':=' expected.
+        }
+
+        expression(fsys);
+        if (i) {
+            mask* mk = (mask*)&table[i];
+            gen(STO, level - mk->level, mk->address); // 使用正确的作用域层级
+        }
+    }
 	else if (sym == SYM_CALL)
 	{ // procedure call
 		getsym();
