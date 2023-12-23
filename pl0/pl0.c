@@ -539,6 +539,10 @@ int addr_factor(symset fsys)
 			case ID_POINTER:
 				mk = (mask*) &table[i];
 				gen(LEA, level - mk->level, mk->address);	// 将指针变量的值加载到栈顶
+				// gen(LODA, 0, 0);	// 将指针指向的地址中的值加载到栈顶
+				// 是指针变量，则将指针变量的值加载到栈顶，然后检查该值
+				
+				
 				break;
 			} // switch
 		}
@@ -590,7 +594,9 @@ int addr_factor(symset fsys)
 		if(sym == SYM_TIMES)	// '*'S	指针运算
 		{
 			sym = SYM_POINTER;
-			addr_factor(fsys);
+			// addr_factor(fsys);
+			// gen(LODA, 0, 0);	// 将指针指向的地址中的值加载到栈顶
+			factor(fsys);
 		}
 		else if(sym == SYM_LPAREN)	// S -> '('L')'
 		{
@@ -630,7 +636,9 @@ int addr_factor(symset fsys)
 		}
 		else if (sym == SYM_IDENTIFIER || SYM_ARRAY)	// var | arr
 		{
-			addr_factor(fsys);
+			// addr_factor(fsys);
+			// gen(LODA, 0, 0);
+			factor(fsys);
 		}
 		else
 			// error();
@@ -1059,7 +1067,7 @@ void statement(symset fsys)
 		factor(set);	// 分析因子表达式，结果放在栈顶
 		destroyset(set1);
 		destroyset(set);
-		gen(LODA, 0, 0);	// 将指针指向的地址中的值加载到栈顶
+		// gen(LODA, 0, 0);	// 将指针指向的地址中的值加载到栈顶
 		if (sym == SYM_BECOMES)
 		{
 			getsym();
@@ -1361,7 +1369,7 @@ void interpret()
 			break;
 		case LODA:
 			stack[top] = stack[stack[top]];
-			// printf("%d\n", stack[top]);
+			printf("%d\n", stack[top]);
 			break;
 		case STOA:
 			stack[stack[top - 1]] = stack[top];
