@@ -1,4 +1,31 @@
 // pl0 compiler source code
+// 在此基础上扩展添加数组类型的定义声明和引用，以及指针类型的定义声明和引用
+/*
+
+数组结构体
+typedef struct
+{
+	char name[MAXIDLEN + 1];	// 数组名
+	int n_dim;					// 维数
+	int dim[MAXDIM];			// 每一维的大小
+	int dim_offset[MAXDIM];		// 每一维的偏移量
+	int size;					// 数组总大小
+	int address;				// 数组首地址
+} arr;
+
+arr array, array_table[TXMAX];	// 数组符号表
+
+变量和过程结构体：名字，类型，指针级别（指针变量用），层次，地址（变量是修正量/偏移量，过程则是入口地址）。存在符号表中，与常量在内存中不区分，操作时 kind==SYM_VAR 或 SYM_PROCEDURE 区分
+typedef struct
+{
+	char  name[MAXIDLEN + 1];
+	int  kind;
+	short level;
+	short address;
+} mask;
+
+
+*/
 
 #pragma warning(disable:4996)
 
@@ -77,7 +104,10 @@ void getsym(void)
 		if (++i)
 			sym = wsym[i]; // symbol is a reserved word
 		else
-			sym = SYM_IDENTIFIER;   // symbol is an identifier
+			if (ch == '[')
+				sym = SYM_ARRAY;
+			else
+				sym = SYM_IDENTIFIER;   // symbol is an identifier
 	}
 	else if (isdigit(ch))
 	{ // symbol is a number.
@@ -191,10 +221,11 @@ int dx;  // data allocation index
 // enter object(constant, variable or procedre) into table.
 void enter(int kind)
 {
+	int i;
 	mask* mk;
-
 	tx++;
 	strcpy(table[tx].name, id);
+	// table[tx].kind = kind;
 	table[tx].kind = kind;
 	switch (kind)
 	{
@@ -215,6 +246,28 @@ void enter(int kind)
 		mk = (mask*) &table[tx];
 		mk->level = level;
 		break;
+	case ID_ARRAY:
+		array_table[++ax] = array;
+		strcpy(array_table[ax].name, id);
+		if (type_of_var == ID_VARIABLE)
+		{
+			printf("%d\n", tx);
+			array_table[ax].address = tx--;	// 保证数组地址就是第一个变量的地址
+			for(i = 0; i < array.size; i++)
+				enter(ID_VARIABLE);
+		}
+		else if (type_of_var == ID_POINTER)
+		{
+			array_table[ax].address = tx--;
+			for(i = 0; i < array.size; i++)
+				enter(ID_POINTER);
+		}
+		break;
+	case ID_POINTER:
+		mk = (mask*) &table[tx];
+		mk->level = level;
+		mk->address = dx++;
+		break;
 	} // switch
 } // enter
 
@@ -228,6 +281,16 @@ int position(char* id)
 	while (strcmp(table[--i].name, id) != 0);
 	return i;
 } // position
+
+int array_position(char* id)
+{
+	int i;
+	strcpy(array_table[0].name, id);
+	i = ax + 1;
+	while (strcmp(array_table[--i].name, id) != 0);
+	return i;
+} // array_position
+
 
 //////////////////////////////////////////////////////////////////////
 // 已经读完const和标识符，接下来读取等号和数字，然后将常量加入符号表，调用完成后，sym指向下一个标识符
@@ -260,12 +323,70 @@ void constdeclaration()
 } // constdeclaration
 
 //////////////////////////////////////////////////////////////////////
+
+// 逐维分析数组，保存在array结构体中
+void array_analyse(void)
+{
+	int dim = 0;
+	while(ch == '[')
+	{
+		getch();
+		getsym();
+		if (sym == SYM_NUMBER)
+		{
+			array.dim[dim++] = num;
+			getsym();
+		}
+		else
+			// error();
+			printf("Error: There must be a number to follow '['.\n");
+	}
+	array.n_dim = dim;
+	array.dim_offset[dim-1] = 1;
+	for(int i = dim-1; i > 0; i--)
+		array.dim_offset[i-1] = array.dim_offset[i] * array.dim[i];
+	array.size = array.dim_offset[0] * array.dim[0];
+}
+
 // 已经读完var和标识符，接下来将变量加入符号表，调用完成后，sym指向下一个标识符
 void vardeclaration(void)
 {
 	if (sym == SYM_IDENTIFIER)
 	{
+		type_of_var = ID_VARIABLE;
 		enter(ID_VARIABLE);
+		getsym();
+	}
+	else if (sym == SYM_ARRAY)
+	{
+		array_analyse();	// 分析数组，保存在array结构体中
+		enter(ID_ARRAY);	// 将数组填入符号表
+		getsym();
+	}
+	else if (sym == SYM_TIMES)
+	{
+		sym = SYM_POINTER;
+		vardeclaration();
+	}
+	else if (sym == SYM_POINTER)
+	{
+		type_of_var = ID_POINTER;
+		// 跳过指针运算符
+		while(ch == '*')
+		{
+			getch();
+		}
+		getsym();
+		// 分析是指针变量还是数组
+		if (sym == SYM_IDENTIFIER)
+			enter(ID_POINTER); // 变量直接填入符号表
+		else if (sym == SYM_ARRAY)
+		{	// 数组则分析，保存在array结构体中，再填入符号表（指针数组）
+			array_analyse();
+			enter(ID_ARRAY);
+		}
+		else	// error();
+			printf("Error: There must be an identifier to follow 'pointer'.\n");
 		getsym();
 	}
 	else
@@ -294,6 +415,233 @@ void listcode(int from, int to)
 	PL/0 的编译程序为每一条 PL/0 源程序的可执行语句生成后缀式目标代码。
 */
 
+void cal_ptr_offset(symset fsys)
+{
+	int i;
+	p_level++;
+	getsym();
+	if(sym == SYM_TIMES || SYM_POINTER)	// S -> '*'S
+	{
+		sym = SYM_POINTER;
+		cal_ptr_offset(fsys);	
+		// gen(LODA, 0, 0);	// 将指针指向的地址中的值加载到栈顶
+	}
+	else if(sym == SYM_LPAREN)	// S -> '('L')'
+	{
+		int current_p_level = p_level;
+		getsym();
+		cal_ptr_offset(fsys);
+		if(sym == SYM_PLUS || sym == SYM_MINUS)
+		{
+			int op;
+			if(sym == SYM_PLUS)
+				op = OPR_ADD;
+			else
+				op = OPR_MIN;
+			getsym();
+			if(sym == SYM_NUMBER)
+			{
+				gen(LIT, 0, num);
+				int dim_offset = array.dim_offset[array.n_dim - current_p_level];
+				gen(LIT, 0, dim_offset);
+				gen(OPR, 0, OPR_MUL);
+				gen(OPR, 0, op);
+				// gen(LODA, 0, 0);	// 将指针指向的地址中的值加载到栈顶
+			}
+			else
+				// error();
+				printf("Error: There must be a number to follow '+'.\n");
+			getsym();	// 读取')'
+		}
+		else if(sym == SYM_RPAREN)	// 当作指针加 0，表达式中该括号实际上可以去掉
+		{
+			// gen(LODA, 0, 0);	// 将指针指向的地址中的值加载到栈顶
+		}
+		else
+			// error();
+			printf("Error: There must be a number or ')' to follow '*'.\n");
+		getsym();
+	}
+	else if (sym == SYM_IDENTIFIER)	// S -> var
+	{
+		if ((i = array_position(id)) != 0)
+		{
+			array = array_table[i];
+			int j = array.address;
+			mask* mk = (mask*) &table[j];
+			gen(LEA, level - mk->level, mk->address);	// 将数组基地址放入栈顶
+			// gen(LODA, 0, 0);	// 将指针指向的地址中的值加载到栈顶
+		}
+		else if ((i = position(id)) != 0)
+		{
+			mask* mk = (mask*) &table[i];
+			gen(LEA, level - mk->level, mk->address);	// 将指针变量的值加载到栈顶
+			gen(LODA, 0, 0);	// 将指针指向的地址中的值加载到栈顶
+		} 
+		else
+		{
+			error(11); // Undeclared identifier.
+		}
+		getsym();
+	}
+	else if(sym == SYM_ARRAY)	// S -> arr
+	{
+		if((i = array_position(id)) != 0)
+		{
+			array = array_table[i];
+			addr_factor(fsys);
+			// gen(LODA, 0, 0);	// 将指针指向的地址中的值加载到栈顶
+		}
+		else
+			// error();
+			printf("Error: Undeclared array identifier.\n");
+	}
+	else
+		// error();
+		printf("Error: Don't belong to the first set of S.\n");
+	p_level--;
+}
+
+
+// 取地址运算符存在时，因子表达式计算只需要计算出地址放在栈顶，不需要LOD，故该过程抽象出来，在无取地址运算符时，可以先算出值的地址，再LOD。这对数组和指针运算符是有用的
+int addr_factor(symset fsys)
+{
+	void expression(symset fsys);
+	void factor(symset fsys);
+	symset set;
+	int i;
+	// getsym();
+	if (sym == SYM_IDENTIFIER)	// 从符号表中找出标识符，然后生成LOD指令，即将变量的值放入栈顶，如果是常量符号，生成LIT指令，将常量值放入栈顶
+	{
+		if ((i = array_position(id)) != 0)
+		{
+			array = array_table[i];
+			int j = array.address;
+			mask* mk = (mask*) &table[j];
+			gen(LEA, level - mk->level, mk->address);	// 将数组基地址放入栈顶
+		}
+		else if ((i = position(id)) != 0)
+		{
+			switch (table[i].kind)
+			{
+				mask* mk;
+			case ID_CONSTANT:
+				// error();
+				printf("Error: There must be a variable identifier to follow '&'.\n");
+				break;
+			case ID_VARIABLE:
+				mk = (mask*) &table[i];
+				gen(LEA, level - mk->level, mk->address);
+				break;
+			case ID_PROCEDURE:
+				error(21); // Procedure identifier can not be in an expression.
+				break;
+			case ID_POINTER:
+				mk = (mask*) &table[i];
+				gen(LEA, level - mk->level, mk->address);	// 将指针变量的值加载到栈顶
+				break;
+			} // switch
+		}
+		else
+		{
+			error(11); // Undeclared identifier.
+		}
+		getsym();
+	}
+	else if(sym == SYM_ARRAY)
+	{
+		if(!(i = array_position(id)))
+			// error();
+			printf("Error: Undeclared array identifier.\n");
+		else
+		{
+			array = array_table[i];
+			int dim = 0;
+			int j = array.address;
+			mask* mk = (mask*) &table[j];
+			gen(LIT, 0, 0);	// 先将0放入栈顶，用于保存最终偏移
+			while(ch == '[')
+			{
+				getch();
+				getsym();
+				set = uniteset(createset(SYM_RSQUARE, SYM_NULL), fsys);
+				expression(set);	// 分析中括号内的表达式，结果放在栈顶
+				destroyset(set);
+				gen(LIT, 0, array_table[i].dim_offset[dim++]);	// 将对应维度的偏移放入栈顶
+				gen(OPR, 0, OPR_MUL);	// 将索引乘以维偏移，结果放在栈顶
+				gen(OPR, 0, OPR_ADD);	// 将当前栈顶的偏移加到之前的偏移上，结果放在栈顶
+			}
+			gen(LEA, level - mk->level, mk->address);	// 将数组基地址放入栈顶
+			gen(OPR, 0, OPR_ADD);	// 将数组基地址加到偏移上，即得到数组元素绝对地址，放在栈顶
+			// gen(LODA, 0, 0);	// 将数组元素加载到栈顶。在factor中调用
+		}
+		getsym();
+	}
+	else if(sym == SYM_POINTER || SYM_TIMES)	// 因子表达式读到'*'说明不是乘，而是指针运算
+	{
+		/*
+			分析含指针的表达式文法：
+			S -> '*'S | '('L')' | var | arr
+			L -> S | S '+' num | S '-' num
+		*/
+		p_level++;
+		sym = SYM_POINTER;
+		getsym();
+		if(sym == SYM_TIMES)	// '*'S	指针运算
+		{
+			sym = SYM_POINTER;
+			addr_factor(fsys);
+		}
+		else if(sym == SYM_LPAREN)	// S -> '('L')'
+		{
+			int current_p_level = p_level;
+			getsym();
+			addr_factor(fsys);
+			if(sym == SYM_PLUS || sym == SYM_MINUS)
+			{
+				int op;
+				if(sym == SYM_PLUS)
+					op = OPR_ADD;
+				else
+					op = OPR_MIN;
+				getsym();
+				if(sym == SYM_NUMBER)
+				{
+					gen(LIT, 0, num);
+					int dim_offset = array.dim_offset[array.n_dim - current_p_level];
+					gen(LIT, 0, dim_offset);
+					gen(OPR, 0, OPR_MUL);
+					gen(OPR, 0, op);
+					// gen(LODA, 0, 0);	// 将指针指向的地址中的值加载到栈顶
+				}
+				else
+					// error();
+					printf("Error: There must be a number to follow '+'.\n");
+				getsym();	// 读取')'
+			}
+			else if(sym == SYM_RPAREN)	// 当作指针加 0，表达式中该括号实际上可以去掉
+			{
+				// gen(LODA, 0, 0);	// 将指针指向的地址中的值加载到栈顶
+			}
+			else
+				// error();
+				printf("Error: There must be a number or ')' to follow '*'.\n");
+			getsym();
+		}
+		else if (sym == SYM_IDENTIFIER || SYM_ARRAY)	// var | arr
+		{
+			addr_factor(fsys);
+		}
+		else
+			// error();
+			printf("Error: There must be an identifier to follow '*'.\n");
+			// gen(LODA, 0, 0);	// 将指针指向的地址中的值加载到栈顶。在factor中调用
+		p_level--;
+	}
+	else
+		// error();
+		printf("Error: Don't belong to the follow set of &.\n");
+}
 
 void factor(symset fsys)
 {
@@ -307,11 +655,19 @@ void factor(symset fsys)
 	{
 		if (sym == SYM_IDENTIFIER)	// 从符号表中找出标识符，然后生成LOD指令，即将变量的值放入栈顶，如果是常量符号，生成LIT指令，将常量值放入栈顶
 		{
-			if ((i = position(id)) == 0)
+			// if ((i = position(id)) == 0)
+			// {
+			// 	error(11); // Undeclared identifier.
+			// }
+			if ((i = array_position(id)) != 0)
 			{
-				error(11); // Undeclared identifier.
+				array = array_table[i];
+				int j = array.address;
+				mask* mk = (mask*) &table[j];
+				gen(LEA, level - mk->level, mk->address);	// 将数组基地址放入栈顶
+				// gen(LODA, 0, 0);	// 将数组元素加载到栈顶
 			}
-			else
+			else if ((i = position(id)) != 0)
 			{
 				switch (table[i].kind)
 				{
@@ -326,7 +682,15 @@ void factor(symset fsys)
 				case ID_PROCEDURE:
 					error(21); // Procedure identifier can not be in an expression.
 					break;
+				case ID_POINTER:
+					mk = (mask*) &table[i];
+					gen(LOD, level - mk->level, mk->address);	// 将指针变量的值加载到栈顶
+					break;
 				} // switch
+			}
+			else
+			{
+				error(11); // Undeclared identifier.
 			}
 			getsym();
 		}
@@ -360,6 +724,21 @@ void factor(symset fsys)
 			 getsym();
 			 factor(fsys);
 			 gen(OPR, 0, OPR_NEG);
+		}
+		else if(sym == SYM_ARRAY)	// 数组
+		{
+			addr_factor(fsys);
+			gen(LODA, 0, 0);	// 将数组元素加载到栈顶
+		}
+		else if (sym == SYM_TIMES || sym == SYM_POINTER)	// 指针运算符
+		{
+			addr_factor(fsys);
+			gen(LODA, 0, 0);	// 将指针指向的地址中的值加载到栈顶
+		}
+		else if (sym == SYM_ADDR)
+		{
+			getsym();
+			addr_factor(fsys);
 		}
 		test(fsys, createset(SYM_LPAREN, SYM_NULL), 23);
 	} // if
@@ -483,7 +862,7 @@ void statement(symset fsys)
 		{
 			error(11); // Undeclared identifier.
 		}
-		else if (table[i].kind != ID_VARIABLE)
+		else if (table[i].kind != ID_VARIABLE && table[i].kind != ID_POINTER)
 		{
 			error(12); // Illegal assignment.
 			i = 0;
@@ -622,6 +1001,7 @@ void statement(symset fsys)
 				break;
 			}
 			expression(fsys);	// 分析表达式，结果放在栈顶
+			// printf("%d\n", table[1].);
 			gen(PRINT, 0, 0);	// 生成打印指令，打印栈顶的值
 		}while(sym == SYM_COMMA);
 		if (sym != SYM_RPAREN)
@@ -632,6 +1012,64 @@ void statement(symset fsys)
 		if (!is_print_none)
 			gen(OPR, 0, OPR_NLN);	// print(...) 生成打印换行指令
 		getsym();
+	}
+	else if(sym == SYM_ARRAY)
+	{
+		if(!(i = array_position(id)))
+			// error();
+			printf("Error: Undeclared array identifier.\n");
+		else
+		{
+			int dim = 0;
+			int j = array_table[i].address;
+			mask* mk = (mask*) &table[j];
+			gen(LIT, 0, 0);	// 先将0放入栈顶，用于保存最终偏移
+			while(ch == '[')
+			{
+				getch();
+				getsym();
+				set = uniteset(createset(SYM_RSQUARE, SYM_NULL), fsys);
+				expression(set);	// 分析中括号内的表达式，结果放在栈顶
+				destroyset(set);
+				gen(LIT, 0, array_table[i].dim_offset[dim++]);	// 将对应维度的偏移放入栈顶
+				gen(OPR, 0, OPR_MUL);	// 将索引乘以维偏移，结果放在栈顶
+				gen(OPR, 0, OPR_ADD);	// 将当前栈顶的偏移加到之前的偏移上，结果放在栈顶
+			}
+			gen(LEA, level - mk->level, mk->address);	// 将数组基地址放入栈顶
+			gen(OPR, 0, OPR_ADD);	// 将数组基地址加到偏移上，即得到数组元素绝对地址，放在栈顶
+			
+			getsym();
+			if (sym == SYM_BECOMES)
+			{
+				getsym();
+			}
+			else
+			{
+				error(13); // ':=' expected.
+			}
+			expression(fsys);	// 分析表达式，结果放在栈顶
+			gen(STOA, 0, 0);	// 将栈顶的值存入数组元素中
+		}
+	}
+	else if (sym == SYM_TIMES)	// 语句开头是'*'，说明是指针运算
+	{
+		getsym();
+		set1 = createset(SYM_BECOMES, SYM_NULL);
+		set = uniteset(set1, fsys);
+		factor(set);	// 分析因子表达式，结果放在栈顶
+		destroyset(set1);
+		destroyset(set);
+		gen(LODA, 0, 0);	// 将指针指向的地址中的值加载到栈顶
+		if (sym == SYM_BECOMES)
+		{
+			getsym();
+		}
+		else
+		{
+			error(13); // ':=' expected.
+		}
+		expression(fsys);	// 分析表达式，结果（要存入的值）放在栈顶
+		gen(STOA, 0, 0);	// 将栈顶的值存入指针指向的地址中
 	}
 	test(fsys, phi, 19);
 } // statement
@@ -660,7 +1098,8 @@ void block(symset fsys)
 	}
 	do
 	{
-		if (sym == SYM_CONST)
+		// if (sym == SYM_CONST)
+		while (sym == SYM_CONST)
 		{ // constant declarations
 			getsym();	// 读标识符
 			do
@@ -681,9 +1120,11 @@ void block(symset fsys)
 				}
 			}
 			while (sym == SYM_IDENTIFIER);	// 分号后面如果还是标识符，当作上一句 CONST 的一部分
-		} // if
+		// } // if
+		} // while	可多行定义常量
 
-		if (sym == SYM_VAR)
+		// if (sym == SYM_VAR)
+		while (sym == SYM_VAR)
 		{ // variable declarations
 			getsym();
 			do
@@ -704,7 +1145,9 @@ void block(symset fsys)
 				}
 			}
 			while (sym == SYM_IDENTIFIER);
-		} // if
+		// } // if
+		} // while	可多行定义变量
+
 		block_dx = dx; //save dx before handling procedure call!	子过程需要其自己来维护自己的数据区
 		while (sym == SYM_PROCEDURE)
 		{ // procedure declarations
@@ -770,6 +1213,7 @@ void block(symset fsys)
 	gen(INT, 0, block_dx);	// 生成INT指令，分配数据区（在数据栈中分配存贮空间）。注意每个过程需要分配的地址为局部变量个数加三个内部变量 RA，DL 和 SL
 	set1 = createset(SYM_SEMICOLON, SYM_END, SYM_NULL);
 	set = uniteset(set1, fsys);
+
 	statement(set);	// 分析过程体执行语句，即本过程begin...end中间的代码，注意上面是声明部分
 	destroyset(set1);
 	destroyset(set);
@@ -881,8 +1325,8 @@ void interpret()
 			stack[++top] = stack[base(stack, b, i.l) + i.a];
 			break;
 		case STO:
+			// printf("%d,%d\n",base(stack, b, i.l) + i.a, stack[top]);
 			stack[base(stack, b, i.l) + i.a] = stack[top];
-			printf("%d\n", stack[top]);
 			top--;
 			break;
 		case CAL:
@@ -910,6 +1354,19 @@ void interpret()
 		case PRINT:
 			printf("%d ", stack[top]);
 			top--;
+			break;
+		case LEA:
+			stack[++top] = base(stack, b, i.l) + i.a;
+			// printf("%d\n", stack[top]);
+			break;
+		case LODA:
+			stack[top] = stack[stack[top]];
+			// printf("%d\n", stack[top]);
+			break;
+		case STOA:
+			stack[stack[top - 1]] = stack[top];
+			// printf("%d, %d\n", stack[top - 1], stack[top]);
+			top -= 2;
 			break;
 		} // switch
 	}
@@ -940,7 +1397,7 @@ void main ()
 	// create begin symbol sets
 	declbegsys = createset(SYM_CONST, SYM_VAR, SYM_PROCEDURE, SYM_NULL);
 	statbegsys = createset(SYM_BEGIN, SYM_CALL, SYM_IF, SYM_WHILE, SYM_NULL);
-	facbegsys = createset(SYM_IDENTIFIER, SYM_NUMBER, SYM_LPAREN, SYM_MINUS, SYM_NULL);
+	facbegsys = createset(SYM_IDENTIFIER, SYM_NUMBER, SYM_LPAREN, SYM_MINUS, SYM_ADDR, SYM_POINTER, SYM_TIMES, SYM_ARRAY, SYM_NULL);
 
 	err = cc = cx = ll = 0; // initialize global variables
 	ch = ' ';

@@ -2,9 +2,11 @@
 
 // #define NRW        11     // number of reserved words
 #define NRW        12     // add 'print'
-#define TXMAX      500    // length of identifier table
+// #define TXMAX      500    // length of identifier table
+#define TXMAX      5000    // length of identifier table
 #define MAXNUMLEN  14     // maximum number of digits in numbers
-#define NSYM       10     // maximum number of symbols in array ssym and csym
+// #define NSYM       10     // maximum number of symbols in array ssym and csym
+#define NSYM       14     // add '[', ']', '*'(pointer), '&'(address)
 #define MAXIDLEN   10     // length of identifiers
 
 #define MAXADDRESS 32767  // maximum address
@@ -12,9 +14,13 @@
 #define CXMAX      500    // size of code array
 
 // #define MAXSYM     30     // maximum number of symbols  
-#define MAXSYM     31     // add 'SYM_PRINT'
+#define MAXSYM     36     // add 'pointer', 'array', '[', ']', '&', 'print'
 
-#define STACKSIZE  1000   // maximum storage
+// #define STACKSIZE  1000   // maximum storage
+#define STACKSIZE  5000   // maximum storage
+
+
+#define MAXDIM	 10     // maximum dimension of array
 
 // 所有符号类型枚举变量：保留关键词、运算符、标识符、数字、空、标点符号
 enum symtype
@@ -49,27 +55,28 @@ enum symtype
 	SYM_CONST,
 	SYM_VAR,
 	SYM_PROCEDURE,
-	// SYM_ARRAY,	// array
-	// SYM_LSQUARE,	// [
-	// SYM_RSQUARE,	// ]
+	SYM_POINTER,	// pointer
+	SYM_ARRAY,	// array
+	SYM_LSQUARE,	// [
+	SYM_RSQUARE,	// ]
 	// SYM_LBRACE,	// {
 	// SYM_RBRACE, // }
+	SYM_ADDR,	// &
 	SYM_PRINT	// print
 };
 
 // 标识符类型枚举变量（常量，变量，过程）
 enum idtype
 {
-	ID_CONSTANT, ID_VARIABLE, ID_PROCEDURE
-	// ID_CONSTANT, ID_VARIABLE, ID_PROCEDURE, ID_ARRAY
+	// ID_CONSTANT, ID_VARIABLE, ID_PROCEDURE
+	ID_CONSTANT, ID_VARIABLE, ID_PROCEDURE, ID_ARRAY, ID_POINTER
 };
 
 // 指令类型枚举变量
 enum opcode
 {
-	LIT, OPR, LOD, STO, CAL, INT, JMP, JPC,
-	PRINT
-	// LIT, OPR, LOD, STO, CAL, INT, JMP, JPC, LEA, LODA, STOA
+	// LIT, OPR, LOD, STO, CAL, INT, JMP, JPC,
+	LIT, OPR, LOD, STO, CAL, INT, JMP, JPC, PRINT, LEA, LODA, STOA
 };
 
 // 算术和逻辑运算符枚举变量，均是后缀表达式，即生成表达式计算指令后，再生成运算指令
@@ -139,7 +146,10 @@ int  kk;
 int  err;		 // 错误个数
 int  cx;         // index of current instruction to be generated. CX 表示下一条即将生成的目标指令的地址
 int  level = 0;
+int  p_level = 0;	// 嵌套分析指针级别
 int  tx = 0;	 // 指向符号表顶部的指针
+int  ax = 0;	 // 数组符号表指针
+int  type_of_var = ID_VARIABLE;	// 变量类型(整型或指针型)
 
 char line[80];	// 读取一行源程序
 
@@ -165,25 +175,26 @@ int wsym[NRW + 1] =
 // 除了保留关键词，自定义标识符，数字，赋值和比较运算符，其他符号的符号表，算数运算符，标点，括号等
 int ssym[NSYM + 1] =
 {
-	SYM_NULL, SYM_PLUS, SYM_MINUS, SYM_TIMES, SYM_SLASH,
-	SYM_LPAREN, SYM_RPAREN, SYM_EQU, SYM_COMMA, SYM_PERIOD, SYM_SEMICOLON
-	// SYM_LSQUARE, SYM_RSQUARE, SYM_LBRACE, SYM_RBRACE
+	SYM_NULL, SYM_PLUS, SYM_MINUS, SYM_POINTER, SYM_SLASH,
+	SYM_LPAREN, SYM_RPAREN, SYM_EQU, SYM_COMMA, SYM_PERIOD, SYM_SEMICOLON,
+	SYM_LSQUARE, SYM_RSQUARE, SYM_TIMES, SYM_ADDR
+	// SYM_LBRACE, SYM_RBRACE
 };
 
 // 除了保留关键词，自定义标识符，数字，赋值和比较运算符，其他符号的符号表对应的字符，算数运算符，标点，括号等
 char csym[NSYM + 1] =
 {
-	' ', '+', '-', '*', '/', '(', ')', '=', ',', '.', ';'
-	// '[' , ']', '{', '}'
+	' ', '+', '-', '*', '/', '(', ')', '=', ',', '.', ';',
+	'[' , ']', '*', '&'
+	// '{', '}'
 };
 
 // #define MAXINS   8
-#define MAXINS   9	// add 'PRINT'
+#define MAXINS   12	// add 'PRINT', 'LEA', 'LODA', 'STOA'
 char* mnemonic[MAXINS] =
 {
 	"LIT", "OPR", "LOD", "STO", "CAL", "INT", "JMP", "JPC",
-	"PRINT"
-	// "LEA", "LODA", "STOA"
+	"PRINT", "LEA", "LODA", "STOA"
 };	// 指令伪操作符
 
 // 常量结构体：标识符名字，类型，值。存在符号表中，与变量和过程在内存中不区分，操作时 kind==SYM_CONST 区分
@@ -197,7 +208,16 @@ typedef struct
 // 符号表：保存每个符号的属性，常量就是comtab结构体，变量和过程就是mask结构体
 comtab table[TXMAX];
 
-// 变量和过程结构体：名字，类型，层次，地址（变量是修正量/偏移量，过程则是入口地址）。存在符号表中，与常量在内存中不区分，操作时 kind==SYM_VAR 或 SYM_PROCEDURE 区分
+// // 变量和过程结构体：名字，类型，层次，地址（变量是修正量/偏移量，过程则是入口地址）。存在符号表中，与常量在内存中不区分，操作时 kind==SYM_VAR 或 SYM_PROCEDURE 区分
+// typedef struct
+// {
+// 	char  name[MAXIDLEN + 1];
+// 	int   kind;
+// 	short level;
+// 	short address;
+// } mask;
+
+// 变量和过程结构体：名字，类型，指针级别（指针变量用），层次，地址（变量是修正量/偏移量，过程则是入口地址）。存在符号表中，与常量在内存中不区分，操作时 kind==SYM_VAR 或 SYM_PROCEDURE 区分
 typedef struct
 {
 	char  name[MAXIDLEN + 1];
@@ -205,6 +225,19 @@ typedef struct
 	short level;
 	short address;
 } mask;
+
+// 数组结构体
+typedef struct
+{
+	char name[MAXIDLEN + 1];	// 数组名
+	int n_dim;					// 维数
+	int dim[MAXDIM];			// 每一维的大小
+	int dim_offset[MAXDIM];		// 每一维的偏移量
+	int size;					// 数组总大小
+	int address;				// 数组首地址
+} arr;
+
+arr array, array_table[TXMAX];	// 数组符号表
 
 FILE* infile;
 
