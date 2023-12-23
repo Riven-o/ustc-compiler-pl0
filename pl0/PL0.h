@@ -45,12 +45,13 @@ enum symtype
 	SYM_CALL,
 	SYM_CONST,
 	SYM_VAR,
-	SYM_PROCEDURE
+	SYM_PROCEDURE,
+    SYM_SCOPE // 新增的作用域操作符
 };
 
 enum idtype
 {
-	ID_CONSTANT, ID_VARIABLE, ID_PROCEDURE
+    ID_CONSTANT, ID_VARIABLE, ID_PROCEDURE, ID_ARRAY, ID_POINTER
 };
 
 enum opcode
@@ -161,9 +162,13 @@ char* mnemonic[MAXINS] =
 
 typedef struct
 {
-	char name[MAXIDLEN + 1];
-	int  kind;
-	int  value;
+    char name[MAXIDLEN + 1];
+    int kind;
+    int value;
+    int size;  // 数组大小
+    int ptr_level;  // 指针级别
+    char scope[MAXIDLEN + 1]; // 所属作用域的名称
+    int scopeLevel; // 在作用域中的层级
 } comtab;
 
 comtab table[TXMAX];
@@ -172,6 +177,7 @@ typedef struct
 {
 	char  name[MAXIDLEN + 1];
 	int   kind;
+	int   size;
 	short level;
 	short address;
 } mask;
