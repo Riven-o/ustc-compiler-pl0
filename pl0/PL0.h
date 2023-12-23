@@ -172,7 +172,7 @@ int wsym[NRW + 1] =
 	SYM_PRINT
 };
 
-// 除了保留关键词，自定义标识符，数字，赋值和比较运算符，其他符号的符号表，算数运算符，标点，括号等
+// 下面数组的枚举变量表，用于设置 sym 变量
 int ssym[NSYM + 1] =
 {
 	SYM_NULL, SYM_PLUS, SYM_MINUS, SYM_POINTER, SYM_SLASH,
@@ -181,7 +181,7 @@ int ssym[NSYM + 1] =
 	// SYM_LBRACE, SYM_RBRACE
 };
 
-// 除了保留关键词，自定义标识符，数字，赋值和比较运算符，其他符号的符号表对应的字符，算数运算符，标点，括号等
+// 除了保留关键词，自定义标识符，数字，赋值和比较运算符外，其余单字符的符号表：算数运算符，标点，括号等
 char csym[NSYM + 1] =
 {
 	' ', '+', '-', '*', '/', '(', ')', '=', ',', '.', ';',
@@ -208,16 +208,7 @@ typedef struct
 // 符号表：保存每个符号的属性，常量就是comtab结构体，变量和过程就是mask结构体
 comtab table[TXMAX];
 
-// // 变量和过程结构体：名字，类型，层次，地址（变量是修正量/偏移量，过程则是入口地址）。存在符号表中，与常量在内存中不区分，操作时 kind==SYM_VAR 或 SYM_PROCEDURE 区分
-// typedef struct
-// {
-// 	char  name[MAXIDLEN + 1];
-// 	int   kind;
-// 	short level;
-// 	short address;
-// } mask;
-
-// 变量和过程结构体：名字，类型，指针级别（指针变量用），层次，地址（变量是修正量/偏移量，过程则是入口地址）。存在符号表中，与常量在内存中不区分，操作时 kind==SYM_VAR 或 SYM_PROCEDURE 区分
+// 变量和过程结构体：名字，类型，层次，地址（变量是修正量/偏移量，过程则是入口地址）。存在符号表中，与常量在内存中不区分，操作时 kind==SYM_VAR 或 SYM_PROCEDURE 或 SYM_POINTER 区分
 typedef struct
 {
 	char  name[MAXIDLEN + 1];
