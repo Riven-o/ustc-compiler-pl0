@@ -5,6 +5,7 @@ begin
   a := q;
   b := a;
   p := b;
-  if i = 100 then i :=10
+  if i = 10 then i := 5
   else i := 20;
+  print(i);
 end.
