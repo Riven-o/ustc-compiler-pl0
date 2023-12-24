@@ -14,7 +14,7 @@
 #define CXMAX      500    // size of code array
 
 // #define MAXSYM     30     // maximum number of symbols  
-#define MAXSYM     36     // add 'pointer', 'array', '[', ']', '&', 'print'
+#define MAXSYM     37     // add 'pointer', 'array', '[', ']', '&', 'print', '::'
 
 // #define STACKSIZE  1000   // maximum storage
 #define STACKSIZE  5000   // maximum storage
@@ -48,6 +48,7 @@ enum symtype
     SYM_BEGIN,
 	SYM_END,
 	SYM_IF,
+	SYM_ELSE,
 	SYM_THEN,
 	SYM_WHILE,
 	SYM_DO,
@@ -62,6 +63,7 @@ enum symtype
 	// SYM_LBRACE,	// {
 	// SYM_RBRACE, // }
 	SYM_ADDR,	// &
+	SYM_SCOPE, // ::
 	SYM_PRINT	// print
 };
 
@@ -228,7 +230,10 @@ typedef struct
 	int address;				// 数组首地址
 } arr;
 
-arr array, array_table[TXMAX];	// 数组符号表
+arr array, array_table[TXMAX];	// 全局数组变量，数组符号表
+
+int TX[MAXLEVEL];	// 每个层次的符号表的起始位置
+int SCOPE_level = 0;	// 当前作用域层次
 
 FILE* infile;
 
