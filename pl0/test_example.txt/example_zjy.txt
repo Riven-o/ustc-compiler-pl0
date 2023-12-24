@@ -1,0 +1,12 @@
+var i,j,a[2][3],k; //heheheh
+/*jhfakdsf
+fsdafasdf
+*/
+begin
+  i := -1;
+  j := i + 1;
+  a[1][2] := 111;
+  a[4][4] := i;
+  k := a[1][2];
+  print(a[1][2], a[4][4], i, j, k);
+end.
