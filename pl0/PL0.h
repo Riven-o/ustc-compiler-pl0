@@ -48,6 +48,7 @@ enum symtype
     SYM_BEGIN,
 	SYM_END,
 	SYM_IF,
+	SYM_ELSE,
 	SYM_THEN,
 	SYM_WHILE,
 	SYM_DO,
