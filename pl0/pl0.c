@@ -90,6 +90,35 @@ void getsym(void)
 	while (ch == ' '||ch == '\t')
 		getch();
 
+    ////////////////////////////////////////////////
+    // two kinds of comments supported
+    // 1. line comment:     //...
+    // 2. block comment:    /*...*/
+    ////////////////////////////////////////////////
+    do {
+        while (ch == ' ' || ch == '\t')
+            getch();
+
+        if (ch == '/') {
+            getch();
+            if (ch == '/') {
+                cc = ll = 0;
+                ch = ' ';
+            } else if (ch == '*') {
+                do {
+                    ch = ' ';
+                    while (ch != '*')
+                        getch();
+                    getch();
+                } while (ch != '/');
+                ch = ' ';
+            } else {
+                sym = SYM_SLASH;
+                return;
+            }
+        }
+    } while (ch == ' ');
+
 	if (isalpha(ch))
 	{ // symbol is a reserved word or an identifier.
 		k = 0;
