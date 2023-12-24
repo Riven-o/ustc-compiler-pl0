@@ -1,0 +1,10 @@
+var i,q,a,b,p;
+begin
+  i := 100;
+  q := i;
+  a := q;
+  b := a;
+  p := b;
+  if i = 100 then i :=10
+  else i := 20;
+end.
