@@ -963,7 +963,7 @@ void statement(symset fsys)
 		getsym();
 		set1 = createset(SYM_THEN, SYM_DO, SYM_NULL);
 		set = uniteset(set1, fsys);
-		condition(set);	// 分析条件
+		condition(set);
 		destroyset(set1);
 		destroyset(set);
 		if (sym == SYM_THEN)
@@ -974,11 +974,24 @@ void statement(symset fsys)
 		{
 			error(16); // 'then' expected.
 		}
-		// 回填！！！文档 11 页
 		cx1 = cx;
 		gen(JPC, 0, 0);
-		statement(fsys);
-		code[cx1].a = cx;	
+		// statement(fsys);
+		// code[cx1].a = cx;
+		// else
+		statement(uniteset(createset(SYM_ELSE), fsys));
+		if (sym != SYM_ELSE)
+			code[cx1].a = cx;
+		else
+		{
+			getsym();
+			cx2 = cx;
+			gen(JMP, 0, 0);	  // 直接跳转，执行完Then后面的则跳转到条件语句最后面
+			code[cx1].a = cx; // 回填条件跳转，填回else语句块中第一句
+			statement(fsys);
+			code[cx2].a = cx; // 回填直接跳转地址
+		}
+		// else
 	}
 	else if (sym == SYM_BEGIN)	// 分析复合语句，即begin...end中间的代码
 	{ // block
