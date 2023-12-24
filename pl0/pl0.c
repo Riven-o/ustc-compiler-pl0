@@ -1,5 +1,6 @@
 // pl0 compiler source code
-// 在此基础上扩展添加数组类型的定义声明和引用，以及指针类型的定义声明和引用
+// 已完成：在此基础上扩展添加数组类型的定义声明和引用，以及指针类型的定义声明和引用
+// 在上面基础上扩展：c++中作用域功能
 /*
 
 数组结构体
@@ -25,6 +26,8 @@ typedef struct
 } mask;
 
 arr array, array_table[TXMAX];
+int TX[MAXLEVEL];	// 每个层次的符号表的起始位置
+int SCOPE_level = 0;	// 当前作用域层次
 
 */
 
@@ -130,6 +133,11 @@ void getsym(void)
 		if (ch == '=')
 		{
 			sym = SYM_BECOMES; // :=
+			getch();
+		}
+		else if (ch == ':')
+		{
+			sym = SYM_SCOPE;	// ::
 			getch();
 		}
 		else
@@ -414,6 +422,93 @@ void listcode(int from, int to)
 	PL/0 的编译程序为每一条 PL/0 源程序的可执行语句生成后缀式目标代码。
 */
 
+// 分析作用域表达式，将对应变量的 "地址" 放入栈顶
+void scope_analyse(symset fsys)
+{
+	void addr_factor(symset fsys);
+	/*
+		作用域LL(1)文法如下：
+			S -> proc T | T
+			T -> '::' proc T | '::' V
+			V -> var | arr | '*'V
+	*/
+
+	int i = position(id);	// S -> proc T，先找出过程名
+	mask* mk = (mask*) &table[i];
+	int saveTX = tx;	// 保存当前符号表指针，以便分析完作用域表达式后，恢复到原来的符号表
+	SCOPE_level = 0;	// 作用域层次
+	int legal_flag = 0;	// 用来标记作用域表达式是否合法
+	if (sym == SYM_IDENTIFIER)	// S -> proc T
+	{	
+		int j;
+		tx = TX[SCOPE_level];
+		// 从 main 开始逐层向上查找，直到找到过程名
+		while((j = position(id)) == 0 && SCOPE_level < mk->level)
+		{
+			SCOPE_level++;
+			tx = TX[SCOPE_level];
+		}
+		SCOPE_level++;	// 分析 proc
+		if(j == 0)
+			// error();
+			printf("Error: Undeclared proc identifier.\n");
+		else
+			getsym();	// 读取 proc 后的标识符，准备分析 T
+	}
+	if (sym == SYM_SCOPE)	// T -> '::' proc T | '::' V
+	{
+		getsym();
+		if(sym == SYM_IDENTIFIER || sym == SYM_ARRAY || sym == SYM_TIMES)
+		{
+			// 逐层查找，直到分析完作用域表达式，遇到需要的变量，即递归下降分析 T，直到 V
+			while((sym == SYM_IDENTIFIER || sym == SYM_ARRAY || sym == SYM_TIMES) && SCOPE_level <= level)
+			{
+				tx = TX[SCOPE_level];
+				if(sym == SYM_TIMES || sym == SYM_ARRAY)
+				{
+					legal_flag = 1;
+					break;
+				}
+				if((i = position(id)) != 0)
+				{
+					if(table[i].kind == ID_PROCEDURE)
+						SCOPE_level++;
+					else
+					{
+						legal_flag = 1;
+						break;
+					}
+				}
+				else
+					// error();
+					printf("Error: Undeclared identifier.\n");
+				getsym();
+				if(sym == SYM_SCOPE)
+					getsym();
+				else
+					// error();
+					printf("Error: '::' expected.\n");
+			}
+		}
+		else
+			// error();
+			printf("Error: There must be an identifier to follow '::'.\n");
+	}
+	else
+		// error();
+		printf("Error: '::' expected after prco identifier.\n");
+	if(legal_flag)	// V -> var | arr | '*'V
+	{
+		addr_factor(fsys);	// tx 已经指向了变量所在层次的符号表，在其作用域内分析表达式左值
+	}
+	else
+	{
+		// error();
+		printf("Error: Illegal scope expression.\n");
+	}
+	tx = saveTX;	// 恢复到原来的符号表
+}
+
 // 取地址运算符存在时，因子表达式计算只需要计算出地址放在栈顶，不需要LOD，故该过程抽象出来。在无取地址运算符时，也可以先算出值的地址，再LOD。这对数组和指针运算符是有用的
 void addr_factor(symset fsys)
 {
@@ -577,7 +672,7 @@ void factor(symset fsys)
 
 	if (inset(sym, facbegsys))
 	{
-		if (sym == SYM_IDENTIFIER)	// 从符号表中找出标识符，然后生成LOD指令，即将变量的值放入栈顶，如果是常量符号，生成LIT指令，将常量值放入栈顶
+		if (sym == SYM_IDENTIFIER && ((i = position(id)) != 0) && (table[i].kind != ID_PROCEDURE))	// 从符号表中找出标识符，然后生成LOD指令，即将变量的值放入栈顶，如果是常量符号，生成LIT指令，将常量值放入栈顶
 		{
 			// if ((i = array_position(id)) != 0)
 			// {
@@ -639,13 +734,13 @@ void factor(symset fsys)
 				error(22); // Missing ')'.
 			}
 		}
-		else if(sym == SYM_MINUS) // UMINUS,  Expr -> '-' Expr。由于是后缀表达式，所以实际生成代码：Fact -> Fact '-'
+		else if (sym == SYM_MINUS) // UMINUS,  Expr -> '-' Expr。由于是后缀表达式，所以实际生成代码：Fact -> Fact '-'
 		{  
 			 getsym();
 			 factor(fsys);
 			 gen(OPR, 0, OPR_NEG);
 		}
-		else if(sym == SYM_ARRAY)	// 求数组表达式的值：a[1][2] = *&a[1][2]
+		else if (sym == SYM_ARRAY)	// 求数组表达式的值：a[1][2] = *&a[1][2]
 		{
 			addr_factor(fsys);	// &a[1][2]
 			gen(LODA, 0, 0);	// a[1][2]
@@ -659,6 +754,12 @@ void factor(symset fsys)
 		{
 			getsym();
 			addr_factor(fsys);
+		}
+		else if (sym == SYM_SCOPE || (sym == SYM_IDENTIFIER && ((i = position(id)) != 0) && (table[i].kind == ID_PROCEDURE)))	// 作用域表达式
+		{
+			// 作用域表达式求值：先将变量的地址放入栈顶，然后再加载其值
+			scope_analyse(fsys);
+			gen(LODA, 0, 0);
 		}
 		test(fsys, createset(SYM_LPAREN, SYM_NULL), 23);
 	} // if
@@ -773,7 +874,7 @@ void statement(symset fsys)
 	int i, cx1, cx2;
 	symset set1, set;
 
-	if (sym == SYM_IDENTIFIER)
+	if (sym == SYM_IDENTIFIER && ((i = position(id)) != 0) && (table[i].kind != ID_PROCEDURE))
 	{ // variable assignment。先找出符号表中符号，然后读取赋值号，再分析表达式，最后生成STO指令将表达式的值存入变量中
 		mask* mk;
 		if (! (i = position(id)))
@@ -931,7 +1032,7 @@ void statement(symset fsys)
 			gen(OPR, 0, OPR_NLN);	// print(...) 打印完变量后生成打印换行指令
 		getsym();
 	}
-	else if(sym == SYM_ARRAY)
+	else if (sym == SYM_ARRAY)
 	{
 		if(!(i = array_position(id)))
 			// error();
@@ -971,13 +1072,34 @@ void statement(symset fsys)
 	}
 	else if (sym == SYM_TIMES)	// 语句开头是'*'，说明是指针运算
 	{
-		getsym();
+		// getsym();
 		set1 = createset(SYM_BECOMES, SYM_NULL);
 		set = uniteset(set1, fsys);
-		factor(set);	// 分析表达式左值
+		// factor(set);	// 分析表达式左值
+		addr_factor(set);	// 分析表达式左值
 		destroyset(set1);
 		destroyset(set);
 		// gen(LODA, 0, 0);
+		if (sym == SYM_BECOMES)
+		{
+			getsym();
+		}
+		else
+		{
+			error(13); // ':=' expected.
+		}
+		expression(fsys);	// 分析表达式右值
+		gen(STOA, 0, 0);	// 将栈顶的值存入指针指向的变量中
+	}
+	else if ((sym == SYM_SCOPE) || (sym == SYM_IDENTIFIER && ((i = position(id)) != 0) && (table[i].kind == ID_PROCEDURE))) // 语句开头是'::'或过程，说明是通过作用域查找变量
+	{
+		/*
+			作用域LL(1)文法如下：
+				S -> proc T | T
+				T -> '::' proc T | '::' V
+				V -> var | arr | '*'V
+		*/
+		scope_analyse(fsys);	// 分析作用域表达式，将对应变量的地址放入栈顶
 		if (sym == SYM_BECOMES)
 		{
 			getsym();
@@ -1065,7 +1187,7 @@ void block(symset fsys)
 			while (sym == SYM_IDENTIFIER);
 		// } // if
 		} // while	使得可多行定义变量
-
+		TX[level] = tx;	// 记录每个层次的符号表指针，方便后面通过静态链根据嵌套深度访问非局部变量
 		block_dx = dx; //save dx before handling procedure call!	子过程需要其自己来维护自己的数据区
 		while (sym == SYM_PROCEDURE)
 		{ // procedure declarations
@@ -1074,6 +1196,7 @@ void block(symset fsys)
 			if (sym == SYM_IDENTIFIER)
 			{
 				enter(ID_PROCEDURE);
+				TX[level]++;	// 过程名加入符号表后，符号表指针加一
 				getsym();
 			}
 			else
@@ -1315,7 +1438,7 @@ void main ()
 	// create begin symbol sets
 	declbegsys = createset(SYM_CONST, SYM_VAR, SYM_PROCEDURE, SYM_NULL);
 	statbegsys = createset(SYM_BEGIN, SYM_CALL, SYM_IF, SYM_WHILE, SYM_NULL);
-	facbegsys = createset(SYM_IDENTIFIER, SYM_NUMBER, SYM_LPAREN, SYM_MINUS, SYM_ADDR, SYM_POINTER, SYM_TIMES, SYM_ARRAY, SYM_NULL);
+	facbegsys = createset(SYM_IDENTIFIER, SYM_NUMBER, SYM_LPAREN, SYM_MINUS, SYM_ADDR, SYM_POINTER, SYM_TIMES, SYM_ARRAY, SYM_SCOPE, SYM_NULL);
 
 	err = cc = cx = ll = 0; // initialize global variables
 	ch = ' ';
