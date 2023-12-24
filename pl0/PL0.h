@@ -1,7 +1,7 @@
 #include <stdio.h>
 
 // #define NRW        11     // number of reserved words
-#define NRW        12     // add 'print'
+#define NRW        13     // add 'print'
 // #define TXMAX      500    // length of identifier table
 #define TXMAX      5000    // length of identifier table
 #define MAXNUMLEN  14     // maximum number of digits in numbers
@@ -48,7 +48,6 @@ enum symtype
     SYM_BEGIN,
 	SYM_END,
 	SYM_IF,
-	SYM_ELSE,
 	SYM_THEN,
 	SYM_WHILE,
 	SYM_DO,
@@ -64,7 +63,8 @@ enum symtype
 	// SYM_RBRACE, // }
 	SYM_ADDR,	// &
 	SYM_SCOPE, // ::
-	SYM_PRINT	// print
+	SYM_PRINT,	// print
+	SYM_ELSE
 };
 
 // 标识符类型枚举变量（常量，变量，过程）
@@ -163,7 +163,7 @@ char* word[NRW + 1] =
 	"", /* place holder */
 	"begin", "call", "const", "do", "end","if",
 	"odd", "procedure", "then", "var", "while",
-	"print"
+	"print", "else"
 };
 
 // 所有保留关键词对应 symtype 枚举变量，用于设置 sys 变量
@@ -171,7 +171,7 @@ int wsym[NRW + 1] =
 {
 	SYM_NULL, SYM_BEGIN, SYM_CALL, SYM_CONST, SYM_DO, SYM_END,
 	SYM_IF, SYM_ODD, SYM_PROCEDURE, SYM_THEN, SYM_VAR, SYM_WHILE,
-	SYM_PRINT
+	SYM_PRINT, SYM_ELSE
 };
 
 // 下面数组的枚举变量表，用于设置 sym 变量
